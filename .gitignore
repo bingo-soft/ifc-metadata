@@ -2,3 +2,6 @@
 src/obj/
 src/bin/
 src/Properties/
+**/bin/
+**/obj/
+

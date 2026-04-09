@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/ifc-metadata.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/ifc-metadata.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ifc-metadata.Tests.csproj" />
+  </Folder>
+</Solution>
