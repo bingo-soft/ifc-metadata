@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1] - 2026-04-09 12:36
+
+### Summary
+- Fixed Visual Studio solution/project configuration mapping mismatch for the main project.
+- Aligned project platform declarations to prevent `unknown project configuration mappings` errors when opening `.slnx`.
+
+### Fixed
+- Updated `src/ifc-metadata.csproj` platform and configuration conditions to support solution mappings consistently (`AnyCPU` and `x64`).
+
 ## [1.1.0] - 2026-04-09 12:26
 
 ### Summary
