@@ -149,7 +149,40 @@ Run benchmark:
 dotnet run --project benchmarks/ifc-metadata.Benchmarks.csproj -c Release
 ```
 
-Current benchmark measures `IfcJsonHelper.ToJson` serialization with generated metadata payloads (100 and 1000 objects).
+Benchmark contains 3 separate methods in `IfcFilePipelineBenchmark`:
+- `Extract_Only`
+- `Serialize_Only_From_Extracted_Metadata`
+- `EndToEnd_Extract_And_Serialize`
+
+Model path resolution order:
+1. `IFC_BENCHMARK_FILE` environment variable
+2. `./ifc/01_26_Slavyanka_4.ifc`
+3. `./ifc/sample.ifc`
+4. `sample.ifc` near benchmark executable
+
+Rule:
+- after test run, benchmark report must be generated;
+- formalized in `benchmarks/benchmark_policy.md`.
+
+
+Command for regular cycle (tests -> benchmarks -> report):
+
+```bash
+pwsh ./benchmarks/run-baseline.ps1 -IfcFilePath "ifc/01_26_Slavyanka_4.ifc"
+```
+
+What script does automatically:
+- runs `dotnet test ifc-metadata.slnx -c Release`;
+- runs 3 benchmark methods;
+- saves timestamped CSV/MD snapshots to `benchmarks/results`;
+- updates rolling snapshot in `benchmarks/results/latest`;
+- keeps previous rolling snapshot in `benchmarks/results/previous`;
+- creates comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-comparison.md`;
+- compares with previous commit (`HEAD~1`) when previous report exists there; otherwise compares with previous local run;
+- formats time and memory in comparison report by magnitude (`μs/ms/s`, `KB/MB/GB`);
+- for commit-to-commit comparison, keep `benchmarks/results/latest/*` committed after each run.
+
+
 
 ## Repository structure
 
@@ -166,7 +199,12 @@ Current benchmark measures `IfcJsonHelper.ToJson` serialization with generated m
 │   └── ifc-metadata.Tests.csproj
 ├── benchmarks/
 │   ├── Program.cs
-│   ├── IfcJsonHelperBenchmark.cs
+│   ├── IfcBenchmarkSettings.cs
+│   ├── IfcFilePipelineBenchmark.cs
+│   ├── run-baseline.ps1
+│   ├── results/
+│   │   ├── latest/
+│   │   └── previous/
 │   └── ifc-metadata.Benchmarks.csproj
 └── ifc-metadata.slnx
 ```

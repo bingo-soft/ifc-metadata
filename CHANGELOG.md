@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.0] - 2026-04-09 13:57
+
+### Summary
+- Replaced interactive benchmark selection with deterministic pipeline benchmarks for IFC extraction/serialization baseline.
+- Added automated baseline workflow that runs tests, stores benchmark artifacts, and generates history-based comparison reports.
+- Formalized benchmark execution/reporting policy and aligned repository docs/process for reproducible tracking.
+
+### Added
+- Added `benchmarks/IfcBenchmarkSettings.cs` for IFC source file resolution with fallback order and explicit missing-file diagnostics.
+- Added `benchmarks/IfcFilePipelineBenchmark.cs` with fixed stage methods: `Extract_Only`, `Serialize_Only_From_Extracted_Metadata`, `EndToEnd_Extract_And_Serialize`.
+- Added `benchmarks/run-baseline.ps1` for tests+benchmarks orchestration, artifact snapshots (`latest`/`previous`), and comparison report generation.
+- Added `benchmarks/benchmark_policy.md` with mandatory post-test benchmark reporting rules.
+
+### Changed
+- Updated `benchmarks/Program.cs` to run benchmark class directly via `BenchmarkRunner.Run<IfcFilePipelineBenchmark>()`.
+- Updated `README.md` benchmark section for fixed methods, baseline command, comparison sources, and magnitude-based formatting rules.
+- Updated `.gitignore` to ignore local IFC input files under `ifc/`.
+
+### Removed
+- Removed `benchmarks/IfcJsonHelperBenchmark.cs`.
+
 ## [1.1.1] - 2026-04-09 12:36
 
 ### Summary
