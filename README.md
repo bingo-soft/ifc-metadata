@@ -20,6 +20,8 @@ Single executable with 5 functional blocks:
    - resolves input/output files
    - handles process exit code
    - accepts optional `--preserve-order true|false` (default: `true`)
+   - accepts optional `--verbosity` and prints execution report (schema, telemetry, memory, elapsed time)
+
 
 2. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
    - opens IFC model through `Xbim.Ifc.IfcStore`
@@ -82,6 +84,11 @@ Order option:
 - `--preserve-order true` (default) — deterministic ordered traversal in output.
 - `--preserve-order false` or `--no-preserve-order` — no order enforcement.
 
+Verbosity option:
+- `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console.
+- `--verbosity none` — disable report output.
+
+
 ```bash
 dotnet run --project src/ifc-metadata.csproj -- ./path/to/source.ifc
 ```
@@ -97,7 +104,8 @@ dotnet publish ./src/ifc-metadata.csproj -c Release -r linux-x64 --self-containe
 ## CLI contract
 
 ```bash
-ifc-metadata <source.ifc> [target.json] [--preserve-order true|false]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--verbosity [summary|detailed|none]]
+
 ```
 
 Exit codes:

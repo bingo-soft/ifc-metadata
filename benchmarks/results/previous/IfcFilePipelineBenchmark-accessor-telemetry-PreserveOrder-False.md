@@ -4,19 +4,11 @@ PreserveOrder: False
 
 | Accessor | Fast hits | Fallback hits | Fallback rate | Total | 
 |---|---:|---:|---:|---:|
-| TypedId | 6030 | 570 | 8.64% | 6600 |
-| MaterialId | 5160 | 0 | 0.00% | 5160 |
-| EntityLabel | 5160 | 0 | 0.00% | 5160 |
-| GlobalId | 0 | 0 | n/a | 0 |
+| TypedId | 14520 | 0 | 0.00% | 14520 |
+| MaterialId | 11352 | 0 | 0.00% | 11352 |
+| EntityLabel | 11352 | 0 | 0.00% | 11352 |
+| GlobalId | 13266 | 0 | 0.00% | 13266 |
 
 ## Top fallback runtime types
 
-| Type | Hits |
-|---|---:|
-| Xbim.Ifc2x3.SharedBldgElements.IfcRoof | 150 |
-| Xbim.Ifc2x3.ProductExtension.IfcBuildingStorey | 120 |
-| Xbim.Ifc2x3.SharedBldgElements.IfcRailing | 120 |
-| Xbim.Ifc2x3.SharedBldgElements.IfcStair | 90 |
-| Xbim.Ifc2x3.Kernel.IfcProject | 30 |
-| Xbim.Ifc2x3.ProductExtension.IfcBuilding | 30 |
-| Xbim.Ifc2x3.ProductExtension.IfcSite | 30 |
+No fallback types were hit.

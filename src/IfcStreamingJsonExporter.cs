@@ -17,13 +17,15 @@ namespace Bingosoft.Net.IfcMetadata
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };
 
-        internal static void Export(FileInfo ifcSourceFile, FileInfo jsonTargetFile, bool preserveOrder)
+                internal static IfcExportReport Export(FileInfo ifcSourceFile, FileInfo jsonTargetFile, bool preserveOrder)
         {
             using var model = IfcStore.Open(ifcSourceFile.FullName);
             var project = model.Instances.FirstOrDefault<IIfcProject>()
                           ?? throw new InvalidOperationException("IFC project root (IIfcProject) was not found.");
 
+            var schemaVersion = model.Header.SchemaVersion;
             var counts = BuildObjectIdCounts(project, preserveOrder);
+            var uniqueMetaObjects = counts.Count;
 
             using var stream = File.Create(jsonTargetFile.FullName);
             using var writer = new Utf8JsonWriter(stream, WriterOptions);
@@ -34,7 +36,7 @@ namespace Bingosoft.Net.IfcMetadata
             writer.WriteString("projectId", project.GlobalId.ToString());
             writer.WriteString("author", GetAuthor(model.Header.FileName.AuthorName));
             writer.WriteString("createdAt", model.Header.TimeStamp);
-            writer.WriteString("schema", model.Header.SchemaVersion);
+            writer.WriteString("schema", schemaVersion);
             writer.WriteString("creatingApplication", model.Header.CreatingApplication);
 
             writer.WriteStartObject("metaObjects");
@@ -60,6 +62,8 @@ namespace Bingosoft.Net.IfcMetadata
 
             writer.WriteEndObject();
             writer.WriteEndObject();
+
+            return new IfcExportReport(schemaVersion, uniqueMetaObjects);
         }
 
         internal static int CountMetaObjects(FileInfo ifcSourceFile, bool preserveOrder)
@@ -233,7 +237,7 @@ namespace Bingosoft.Net.IfcMetadata
 
         
 
-        private static string GetAuthor(IList<string> authors)
+                private static string GetAuthor(IList<string> authors)
         {
             if (authors.Count == 0)
             {
@@ -253,4 +257,18 @@ namespace Bingosoft.Net.IfcMetadata
             return builder.ToString();
         }
     }
+
+    internal readonly struct IfcExportReport
+    {
+        internal IfcExportReport(string schemaVersion, int metaObjectCount)
+        {
+            SchemaVersion = schemaVersion;
+            MetaObjectCount = metaObjectCount;
+        }
+
+        internal string SchemaVersion { get; }
+
+        internal int MetaObjectCount { get; }
+    }
 }
+

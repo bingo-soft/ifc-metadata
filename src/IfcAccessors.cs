@@ -200,12 +200,12 @@ namespace Bingosoft.Net.IfcMetadata
                     IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
                     globalId = global4Id.Value.ToString();
                     return true;
+                case IIfcRelDefinesByType relation:
+                    return TryExtractGlobalId(relation.RelatingType, out globalId);
                 case IIfcRoot ifcRoot when !string.IsNullOrWhiteSpace(ifcRoot.GlobalId):
                     IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
                     globalId = ifcRoot.GlobalId;
                     return true;
-                case IIfcRelDefinesByType relation:
-                    return TryExtractGlobalId(relation.RelatingType, out globalId);
                 case IEnumerable collection:
                     foreach (var item in collection)
                     {

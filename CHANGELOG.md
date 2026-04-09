@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.7.0] - 2026-04-09 21:51
+
+### Summary
+- Added CLI post-run verbosity report with execution, memory, output, and accessor telemetry metrics.
+- Hardened `type_id` extraction correctness for IFC2x3 typed relations and covered it with dedicated tests.
+- Updated benchmark snapshots and telemetry artifacts after the accessor/reporting changes.
+
+### Added
+- Added `tests/IfcAccessorsTypedIdTests.cs` with IFC2x3 assertions for typed-id resolution and known non-typed hot types.
+
+### Changed
+- Updated `src/Program.cs` to support `--verbosity [summary|detailed|none]` and print a post-export execution report.
+- Updated `src/IfcStreamingJsonExporter.cs` to return `IfcExportReport` (`SchemaVersion`, `MetaObjectCount`) for CLI reporting.
+- Updated `README.md` with the new verbosity option and report behavior.
+- Refreshed benchmark artifacts in `benchmarks/results/latest`, `benchmarks/results/previous`, and added stamped snapshots (`2026-04-09-213617-*`).
+
+### Fixed
+- Fixed `TryExtractGlobalId` precedence in `src/IfcAccessors.cs` so `IIfcRelDefinesByType` resolves to `RelatingType.GlobalId` before generic `IIfcRoot` fallback.
+
 ## [1.6.0] - 2026-04-09 18:47
 
 ### Summary
