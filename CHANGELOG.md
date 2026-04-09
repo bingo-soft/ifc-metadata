@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.3.0] - 2026-04-09 15:19
+
+### Summary
+- Switched CLI export path to a streaming IFC→JSON pipeline with configurable deterministic ordering.
+- Reworked benchmark strategy to default on overall E2E measurement with order/no-order parameter comparison.
+- Extended baseline reporting with mandatory final order/no-order summary metrics and improved unit parsing.
+
+### Added
+- Added `src/IfcStreamingJsonExporter.cs` for single-pass hierarchy traversal and direct JSON writing without building a full metadata list.
+- Added `benchmarks/IfcFilePipelineDetailedBenchmark.cs` for diagnostic stage-level benchmarks available only on explicit `--detailed` request.
+
+### Changed
+- Updated `src/Program.cs` to support `--preserve-order true|false` / `--no-preserve-order` and use streaming export by default.
+- Updated `benchmarks/IfcFilePipelineBenchmark.cs` to run only overall method with `[Params(true,false)]` for `PreserveOrder`.
+- Updated `benchmarks/Program.cs` to select benchmark mode (`overall` by default, `--detailed` on demand).
+- Updated `benchmarks/run-baseline.ps1` to:
+  - parse time/memory values across `μs|ms|s` and `KB|MB|GB` formats;
+  - keep parameter-aware method keys for comparison;
+  - include required final order/no-order summary lines.
+- Updated `benchmarks/benchmark_policy.md` and `README.md` to reflect benchmark execution scope and reporting requirements.
+- Updated benchmark result snapshots in `benchmarks/results/latest`, `benchmarks/results/previous`, and new timestamped reports.
+
+### Fixed
+- Fixed baseline report generation failure when BenchmarkDotNet emits values in seconds (`s`) and megabytes (`MB`).
+
 ## [1.2.0] - 2026-04-09 13:57
 
 ### Summary

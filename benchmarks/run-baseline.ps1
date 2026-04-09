@@ -12,8 +12,26 @@ function Convert-ToMicroseconds([string]$value)
         return $null
     }
 
-    $normalized = $value -replace 'μs', '' -replace 'us', '' -replace '\s', '' -replace ',', ''
-    return [double]::Parse($normalized, [System.Globalization.CultureInfo]::InvariantCulture)
+    $trimmed = $value.Trim()
+    $match = [regex]::Match($trimmed, '^([0-9]+(?:[\.,][0-9]+)?)\s*(μs|us|ms|s)?$')
+    if (-not $match.Success)
+    {
+        throw "Unable to parse benchmark time value: '$value'"
+    }
+
+    $numberText = $match.Groups[1].Value.Replace(',', '.')
+    $number = [double]::Parse($numberText, [System.Globalization.CultureInfo]::InvariantCulture)
+    $unit = $match.Groups[2].Value
+
+    switch ($unit)
+    {
+        's' { return $number * 1000000 }
+        'ms' { return $number * 1000 }
+        'us' { return $number }
+        'μs' { return $number }
+        '' { return $number }
+        default { throw "Unsupported time unit in benchmark value: '$value'" }
+    }
 }
 
 function Convert-ToKilobytes([string]$value)
@@ -23,8 +41,25 @@ function Convert-ToKilobytes([string]$value)
         return $null
     }
 
-    $normalized = $value -replace 'KB', '' -replace '\s', '' -replace ',', ''
-    return [double]::Parse($normalized, [System.Globalization.CultureInfo]::InvariantCulture)
+    $trimmed = $value.Trim()
+    $match = [regex]::Match($trimmed, '^([0-9]+(?:[\.,][0-9]+)?)\s*(KB|MB|GB)?$')
+    if (-not $match.Success)
+    {
+        throw "Unable to parse benchmark memory value: '$value'"
+    }
+
+    $numberText = $match.Groups[1].Value.Replace(',', '.')
+    $number = [double]::Parse($numberText, [System.Globalization.CultureInfo]::InvariantCulture)
+    $unit = $match.Groups[2].Value
+
+    switch ($unit)
+    {
+        'GB' { return $number * 1048576 }
+        'MB' { return $number * 1024 }
+        'KB' { return $number }
+        '' { return $number }
+        default { throw "Unsupported memory unit in benchmark value: '$value'" }
+    }
 }
 
 function Format-TimeByMagnitude([double]$microseconds)
@@ -71,6 +106,35 @@ function Format-SizeByMagnitude([double]$kilobytes)
     return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:0.###} KB', $kilobytes)
 }
 
+function Get-BenchmarkCaseName($row)
+{
+    $benchmarkParameterColumns = @('PreserveOrder')
+    $parameterPairs = @()
+
+    foreach ($columnName in $benchmarkParameterColumns)
+    {
+        $property = $row.PSObject.Properties[$columnName]
+        if ($null -eq $property)
+        {
+            continue
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$property.Value))
+        {
+            continue
+        }
+
+        $parameterPairs += "$($property.Name)=$($property.Value)"
+    }
+
+    if ($parameterPairs.Count -eq 0)
+    {
+        return $row.Method
+    }
+
+    return "$($row.Method) [$($parameterPairs -join ', ')]"
+}
+
 function Parse-BenchmarkCsv([string]$csvPath)
 {
     $rows = Import-Csv -Path $csvPath -Delimiter ';'
@@ -80,9 +144,10 @@ function Parse-BenchmarkCsv([string]$csvPath)
     {
         $meanUs = Convert-ToMicroseconds $row.Mean
         $allocatedKb = Convert-ToKilobytes $row.Allocated
+        $caseName = Get-BenchmarkCaseName $row
 
-        $result[$row.Method] = [pscustomobject]@{
-            Method = $row.Method
+        $result[$caseName] = [pscustomobject]@{
+            Method = $caseName
             MeanRaw = $row.Mean
             MeanUs = $meanUs
             MeanFormatted = Format-TimeByMagnitude $meanUs
@@ -104,6 +169,54 @@ function Format-Delta([double]$current, [double]$previous)
 
     $delta = (($current - $previous) / $previous) * 100
     return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:+0.00;-0.00;0.00}%', $delta)
+}
+
+function Find-OrderedEndToEndRow($data)
+{
+    foreach ($key in $data.Keys)
+    {
+        if ($key -eq 'EndToEnd_Extract_And_Serialize' -or $key -match '^EndToEnd_Extract_And_Serialize \[.*PreserveOrder=True.*\]$')
+        {
+            return $data[$key]
+        }
+    }
+
+    return $null
+}
+
+function Find-NoOrderEndToEndRow($data)
+{
+    foreach ($key in $data.Keys)
+    {
+        if ($key -eq 'EndToEnd_Extract_And_Serialize_NoOrder' -or $key -match '^EndToEnd_Extract_And_Serialize \[.*PreserveOrder=False.*\]$')
+        {
+            return $data[$key]
+        }
+    }
+
+    return $null
+}
+
+function Format-ResultPair($row)
+{
+    if ($null -eq $row)
+    {
+        return 'n/a'
+    }
+
+    return "Mean: $($row.MeanFormatted); Allocated: $($row.AllocatedFormatted)"
+}
+
+function Format-DeltaPair($currentRow, $previousRow)
+{
+    if ($null -eq $currentRow -or $null -eq $previousRow)
+    {
+        return 'Mean: n/a; Allocated: n/a'
+    }
+
+    $meanDelta = Format-Delta $currentRow.MeanUs $previousRow.MeanUs
+    $allocatedDelta = Format-Delta $currentRow.AllocatedKb $previousRow.AllocatedKb
+    return "Mean: $meanDelta; Allocated: $allocatedDelta"
 }
 
 if (-not (Test-Path -Path $IfcFilePath))
@@ -196,6 +309,7 @@ $comparisonFileLatest = Join-Path $latestDir "IfcFilePipelineBenchmark-compariso
 $comparisonFileStamped = Join-Path $resultsDir "$stamp-IfcFilePipelineBenchmark-comparison.md"
 
 $currentData = Parse-BenchmarkCsv $latestCsv
+$previousData = $null
 
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("# Benchmark comparison report")
@@ -241,6 +355,25 @@ else
         $lines.Add("| $method | $($row.MeanFormatted) | $($row.AllocatedFormatted) |")
     }
 }
+
+$currentOrdered = Find-OrderedEndToEndRow $currentData
+$currentNoOrder = Find-NoOrderEndToEndRow $currentData
+$previousOrdered = if ($null -ne $previousData) { Find-OrderedEndToEndRow $previousData } else { $null }
+$previousNoOrder = if ($null -ne $previousData) { Find-NoOrderEndToEndRow $previousData } else { $null }
+
+$lines.Add("")
+$lines.Add("## Final report order/no-order summary")
+$lines.Add("")
+$lines.Add("| Metric | Value |")
+$lines.Add("|---|---|")
+$lines.Add("| Current ordered result | $(Format-ResultPair $currentOrdered) |")
+$lines.Add("| Current no-order result | $(Format-ResultPair $currentNoOrder) |")
+$lines.Add("| Current no-order vs ordered difference | $(Format-DeltaPair $currentNoOrder $currentOrdered) |")
+$lines.Add("| Previous ordered result | $(Format-ResultPair $previousOrdered) |")
+$lines.Add("| Previous no-order result | $(Format-ResultPair $previousNoOrder) |")
+$lines.Add("| Previous no-order vs ordered difference | $(Format-DeltaPair $previousNoOrder $previousOrdered) |")
+$lines.Add("| Ordered current vs previous difference | $(Format-DeltaPair $currentOrdered $previousOrdered) |")
+$lines.Add("| No-order current vs previous difference | $(Format-DeltaPair $currentNoOrder $previousNoOrder) |")
 
 $lines | Set-Content -Path $comparisonFileLatest -Encoding UTF8
 $lines | Set-Content -Path $comparisonFileStamped -Encoding UTF8

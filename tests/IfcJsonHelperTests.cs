@@ -1,5 +1,7 @@
 using System.Text.Json;
+
 using Bingosoft.Net.IfcMetadata;
+
 using Xunit;
 
 namespace IfcMetadata.Tests;
@@ -22,9 +24,9 @@ public sealed class IfcJsonHelperTests
                 CreatedAt = "2024-01-01T00:00:00+00:00",
                 Schema = "IFC4",
                 CreatingApplication = "test-app",
-                MetaObjects = new List<Metadata>
-                {
-                    new()
+                MetaObjects =
+                [
+                    new Metadata
                     {
                         Id = "obj-1",
                         Name = "Wall 1",
@@ -34,7 +36,7 @@ public sealed class IfcJsonHelperTests
                         Material = "IfcMaterial_123",
                         TypeId = "type-1"
                     }
-                }
+                ]
             };
 
             IfcJsonHelper.ToJson(targetFile, ref metadata);
@@ -85,9 +87,9 @@ public sealed class IfcJsonHelperTests
                 CreatedAt = "2024-01-01T00:00:00+00:00",
                 Schema = "IFC4",
                 CreatingApplication = "test-app",
-                MetaObjects = new List<Metadata>
-                {
-                    new()
+                MetaObjects =
+                [
+                    new Metadata
                     {
                         Id = "obj-1",
                         Name = "Storey 1",
@@ -97,7 +99,7 @@ public sealed class IfcJsonHelperTests
                         Material = null,
                         TypeId = null
                     }
-                }
+                ]
             };
 
             IfcJsonHelper.ToJson(targetFile, ref metadata);

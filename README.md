@@ -13,22 +13,27 @@ Output: JSON document with:
 
 ## Architecture
 
-Single executable with 3 functional blocks:
+Single executable with 4 functional blocks:
 
 1. `Program` (`src/Program.cs`)
    - validates CLI arguments
    - resolves input/output files
    - handles process exit code
+   - accepts optional `--preserve-order true|false` (default: `true`)
 
-2. `MetadataExtractor` (`src/MetadataExtractor.cs`)
+2. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
    - opens IFC model through `Xbim.Ifc.IfcStore`
-   - extracts project metadata from IFC header
-   - traverses model hierarchy recursively
-   - extracts typed id, material link, property set ids
+   - performs streaming extraction + serialization in one pipeline
+   - does not build intermediate full `List<Metadata>` for CLI export
+   - applies duplicate key handling with "last occurrence wins"
 
-3. `IfcJsonHelper` (`src/IfcJsonHelper.cs`)
-   - writes JSON via `Utf8JsonWriter`
-   - serializes root fields and `metaObjects`
+3. `MetadataExtractor` (`src/MetadataExtractor.cs`)
+   - keeps extraction model for non-streaming/internal scenarios
+
+4. `IfcJsonHelper` (`src/IfcJsonHelper.cs`)
+   - writes JSON via `Utf8JsonWriter` from prepared metadata model
+   - used in tests/benchmarks for serialization contract coverage
+
 
 Data shape for one model object is defined by `Metadata` (`src/Metadata.cs`).
 
@@ -67,6 +72,10 @@ dotnet run --project src/ifc-metadata.csproj -- ./path/to/source.ifc ./path/to/t
 
 If output path is not passed, target defaults to source name with `.json` extension in the same directory.
 
+Order option:
+- `--preserve-order true` (default) — deterministic ordered traversal in output.
+- `--preserve-order false` or `--no-preserve-order` — no order enforcement.
+
 ```bash
 dotnet run --project src/ifc-metadata.csproj -- ./path/to/source.ifc
 ```
@@ -82,7 +91,7 @@ dotnet publish ./src/ifc-metadata.csproj -c Release -r linux-x64 --self-containe
 ## CLI contract
 
 ```bash
-ifc-metadata <source.ifc> [target.json]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false]
 ```
 
 Exit codes:
@@ -143,16 +152,25 @@ Current test coverage includes JSON serialization contract checks for `IfcJsonHe
 
 Benchmark project: `benchmarks/ifc-metadata.Benchmarks.csproj`
 
-Run benchmark:
+Run benchmark (default overall mode):
 
 ```bash
 dotnet run --project benchmarks/ifc-metadata.Benchmarks.csproj -c Release
 ```
 
-Benchmark contains 3 separate methods in `IfcFilePipelineBenchmark`:
+Run diagnostic benchmarks on demand:
+
+```bash
+dotnet run --project benchmarks/ifc-metadata.Benchmarks.csproj -c Release -- --detailed
+```
+
+Default benchmark contains only overall method in `IfcFilePipelineBenchmark`:
+- `EndToEnd_Extract_And_Serialize` with `[Params(PreserveOrder=true|false)]`
+
+Diagnostic benchmarks are available only on explicit request (`--detailed`):
 - `Extract_Only`
 - `Serialize_Only_From_Extracted_Metadata`
-- `EndToEnd_Extract_And_Serialize`
+- `EndToEnd_Extract_And_Serialize` (detailed class)
 
 Model path resolution order:
 1. `IFC_BENCHMARK_FILE` environment variable
@@ -173,7 +191,7 @@ pwsh ./benchmarks/run-baseline.ps1 -IfcFilePath "ifc/01_26_Slavyanka_4.ifc"
 
 What script does automatically:
 - runs `dotnet test ifc-metadata.slnx -c Release`;
-- runs 3 benchmark methods;
+- runs only overall benchmark by default (with `PreserveOrder=true|false` cases);
 - saves timestamped CSV/MD snapshots to `benchmarks/results`;
 - updates rolling snapshot in `benchmarks/results/latest`;
 - keeps previous rolling snapshot in `benchmarks/results/previous`;
@@ -190,6 +208,7 @@ What script does automatically:
 .
 ├── src/
 │   ├── Program.cs
+│   ├── IfcStreamingJsonExporter.cs
 │   ├── MetadataExtractor.cs
 │   ├── IfcJsonHelper.cs
 │   ├── Metadata.cs
@@ -201,6 +220,7 @@ What script does automatically:
 │   ├── Program.cs
 │   ├── IfcBenchmarkSettings.cs
 │   ├── IfcFilePipelineBenchmark.cs
+│   ├── IfcFilePipelineDetailedBenchmark.cs
 │   ├── run-baseline.ps1
 │   ├── results/
 │   │   ├── latest/

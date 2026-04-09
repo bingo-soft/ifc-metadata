@@ -1,17 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using Xbim.Ifc;
 using Xbim.Ifc4.Interfaces;
 using Xbim.Ifc4.MaterialResource;
-
-#pragma warning disable RCS1213, IDE0051, S1144
 
 namespace Bingosoft.Net.IfcMetadata
 {
@@ -98,7 +93,7 @@ namespace Bingosoft.Net.IfcMetadata
 
         private static string GetAuthor(IList<string> authors)
         {
-            StringBuilder sb = new StringBuilder();
+            var sb = new StringBuilder();
             foreach (var item in authors)
             {
                 sb.Append(item);
@@ -174,12 +169,9 @@ namespace Bingosoft.Net.IfcMetadata
         private static string GetTypedId(IIfcObjectDefinition element)
         {
             var isTypedByInfo = element.GetType().GetProperty("IsTypedBy");
-            if (isTypedByInfo is null) return null;
 
-            var isTypedByValue = isTypedByInfo.GetValue(element);
-            if (isTypedByValue is null) return null;
-
-            return GetGlobalId(isTypedByValue);
+            var isTypedByValue = isTypedByInfo?.GetValue(element);
+            return isTypedByValue is null ? null : GetGlobalId(isTypedByValue);
         }
 
         private static string GetGlobalId(object obj)
@@ -188,37 +180,29 @@ namespace Bingosoft.Net.IfcMetadata
             if (isTypedByGlobalIdInfo is null) return null;
 
             var isTypedByGlobalIdValue = isTypedByGlobalIdInfo.GetValue(obj);
-            switch (isTypedByGlobalIdValue)
+            return isTypedByGlobalIdValue switch
             {
-                case Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId Global2x3Id:
-                {
-                    return Global2x3Id.Value.ToString();
-                }
-                case Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId Gloval4Id:
-                {
-                    return Gloval4Id.Value.ToString();
-                }
-                default:
-                    return null;
-            }
+                Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId Global2x3Id => Global2x3Id.Value.ToString(),
+                Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId Gloval4Id => Gloval4Id.Value.ToString(),
+                _ => null
+            };
         }
 
         private static int? GetEntityLabel(object obj)
         {
             var isTypedByGlobalIdInfo = obj.GetType().GetProperty("EntityLabel");
-            if (isTypedByGlobalIdInfo is null) return null;
 
-            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo.GetValue(obj);
-            return (int)isTypedByGlobalIdValue;
+            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo?.GetValue(obj);
+            return (int?)isTypedByGlobalIdValue;
         }
 
         private static string[] GetMaterials(IIfcObjectDefinition objectDefinition)
         {
             var material = objectDefinition.GetType().GetProperty("Material");
-            if (material == null) return Array.Empty<string>();
+            if (material == null) return [];
 
             var materialsv = material.GetValue(objectDefinition);
-            if (materialsv == null) return Array.Empty<string>();
+            if (materialsv == null) return [];
 
             var materials = materialsv.GetType().GetProperty("Materials");
             if (materials != null)
@@ -227,53 +211,39 @@ namespace Bingosoft.Net.IfcMetadata
                 switch (maters)
                 {
                     case Xbim.Ifc4.ItemSet<IfcMaterial> mat1:
-                    {
-                        List<string> materoalList = new List<string>(mat1.Count);
-                        foreach (var item in mat1)
                         {
-                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                        }
+                            var materoalList = new List<string>(mat1.Count);
+                            materoalList.AddRange(mat1.Select(item => $"IfcMaterial_{item.EntityLabel}"));
 
-                        return materoalList.ToArray();
-                    }
+                            return materoalList.ToArray();
+                        }
                     case Xbim.Ifc2x3.ItemSet<Xbim.Ifc2x3.MaterialResource.IfcMaterial> mat2:
-                    {
-                        List<string> materoalList = new List<string>(mat2.Count);
-                        foreach (var item in mat2)
                         {
-                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                        }
+                            var materoalList = new List<string>(mat2.Count);
+                            materoalList.AddRange(mat2.Select(item => $"IfcMaterial_{item.EntityLabel}"));
 
-                        return materoalList.ToArray();
-                    }
+                            return materoalList.ToArray();
+                        }
                     default:
-                        return Array.Empty<string>();
+                        return [];
                 }
             }
             else
             {
-                switch (materialsv)
+                return materialsv switch
                 {
-                    case IfcMaterial material4:
-                    {
-                        return new[] { $"IfcMaterial_{material4.EntityLabel}" };
-                    }
-                    case Xbim.Ifc2x3.MaterialResource.IfcMaterial material2x3:
-                    {
-                        return new[] { $"IfcMaterial_{material2x3.EntityLabel}" };
-                    }
-                    default:
-                        return Array.Empty<string>();
-                }
+                    IfcMaterial material4 => [$"IfcMaterial_{material4.EntityLabel}"],
+                    Xbim.Ifc2x3.MaterialResource.IfcMaterial material2x3 => [$"IfcMaterial_{material2x3.EntityLabel}"],
+                    _ => []
+                };
             }
         }
 
         private static string GetMaterialsV2(IIfcObjectDefinition objectDefinition)
         {
             var material = objectDefinition.GetType().GetProperty("Material");
-            if (material is null) return null;
 
-            var materialsv = material.GetValue(objectDefinition);
+            var materialsv = material?.GetValue(objectDefinition);
             if (materialsv is null) return null;
 
             var entLabel = GetEntityLabel(materialsv);
