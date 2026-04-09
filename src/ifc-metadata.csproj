@@ -1,50 +1,43 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <OutputType>Exe</OutputType>
-        <TargetFramework>net10.0</TargetFramework>
-        <RootNamespace>ifc_metadata</RootNamespace>
-        <Title>ifc_metadata</Title>
-        <Authors>Bingosoft</Authors>
-        <Copyright>Bingosoft</Copyright>
-        <Platforms>AnyCPU;x64</Platforms>
-                <AssemblyVersion>1.10.0</AssemblyVersion>
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<RootNamespace>ifc_metadata</RootNamespace>
+		<Title>ifc_metadata</Title>
+		<Authors>Bingosoft</Authors>
+		<Copyright>Bingosoft</Copyright>
+		<Platforms>AnyCPU;x64</Platforms>
+		<AssemblyVersion>1.11.0</AssemblyVersion>
+		<FileVersion>$(AssemblyVersion)</FileVersion>
+		<Version>$(AssemblyVersion)</Version>
+		<ServerGarbageCollection>false</ServerGarbageCollection>
+		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<Nullable>disable</Nullable>
+	</PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
+	</PropertyGroup>
 
-        <FileVersion>$(AssemblyVersion)</FileVersion>
-        <Version>$(AssemblyVersion)</Version>
-        <ServerGarbageCollection>false</ServerGarbageCollection>
-        <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-        <ImplicitUsings>disable</ImplicitUsings>
-        <Nullable>disable</Nullable>
-    </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)'=='Release'">
+		<NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Xbim.Essentials" Version="6.0.587" />
+	</ItemGroup>
 
-            <PropertyGroup Condition="'$(Configuration)'=='Debug'">
-      <NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
-    </PropertyGroup>
+	<ItemGroup>
+		<Compile Remove="ifc-metadata.Generators/**/*.cs" />
+	</ItemGroup>
 
-    <PropertyGroup Condition="'$(Configuration)'=='Release'">
-      <NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
-    </PropertyGroup>
+	<ItemGroup>
 
-
-
-                <ItemGroup>
-        <PackageReference Include="Xbim.Essentials" Version="6.0.587" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Compile Remove="ifc-metadata.Generators/**/*.cs" />
-    </ItemGroup>
-
-    <ItemGroup>
-
-        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-            <_Parameter1>ifc-metadata.Tests</_Parameter1>
-        </AssemblyAttribute>
-        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-            <_Parameter1>ifc-metadata.Benchmarks</_Parameter1>
-        </AssemblyAttribute>
-    </ItemGroup>
-
-
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>ifc-metadata.Tests</_Parameter1>
+		</AssemblyAttribute>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>ifc-metadata.Benchmarks</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
 </Project>

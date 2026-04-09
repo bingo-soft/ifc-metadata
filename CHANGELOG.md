@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.11.0] - 2026-04-10 00:39
+
+### Summary
+- Optimized streaming export by buffering traversal nodes and removing repeated IFC hierarchy traversal in `Export`.
+- Reduced ordered-traversal allocation pressure by replacing per-node temporary `List<T>` collections with `ArrayPool<T>` buffers.
+- Refreshed benchmark baseline artifacts after optimization run; latest cycle shows end-to-end acceleration across all tested GC/order modes.
+
+### Changed
+- Updated `src/IfcStreamingJsonExporter.cs`:
+  - `Export` now buffers traversal nodes during object-id counting and reuses buffered nodes for JSON write phase;
+  - added cached `ObjectId` in traversal node to avoid repeated `GlobalId` access in hot path;
+  - replaced ordered child collection via `new List<IIfcObjectDefinition>()` with pooled arrays (`ArrayPool<IIfcObjectDefinition>`) and in-place sorting.
+- Updated benchmark artifacts:
+  - refreshed `benchmarks/results/latest/*` and `benchmarks/results/previous/*` benchmark snapshots;
+  - added stamped snapshots `benchmarks/results/2026-04-10-003853-*`.
+
 ## [1.10.0] - 2026-04-10 00:06
 
 ### Summary

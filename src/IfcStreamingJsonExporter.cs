@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Encodings.Web;
@@ -18,6 +19,9 @@ namespace Bingosoft.Net.IfcMetadata
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };
 
+        private static readonly IComparer<IIfcObjectDefinition> GlobalIdComparer = Comparer<IIfcObjectDefinition>.Create(
+            static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
+
         internal static IfcExportReport Export(
             FileInfo ifcSourceFile,
             FileInfo jsonTargetFile,
@@ -30,7 +34,8 @@ namespace Bingosoft.Net.IfcMetadata
                           ?? throw new InvalidOperationException("IFC project root (IIfcProject) was not found.");
 
             var schemaVersion = model.Header.SchemaVersion;
-            var counts = BuildObjectIdCounts(project, preserveOrder);
+            var bufferedTraversal = new List<TraversalNode>();
+            var counts = BuildObjectIdCounts(project, preserveOrder, bufferedTraversal);
             var uniqueMetaObjects = counts.Count;
 
             using var stream = OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
@@ -46,10 +51,9 @@ namespace Bingosoft.Net.IfcMetadata
             writer.WriteString("creatingApplication", model.Header.CreatingApplication);
             writer.WriteStartObject("metaObjects");
 
-            foreach (var node in EnumerateHierarchy(project, null, preserveOrder))
+            foreach (var node in bufferedTraversal)
             {
-                var objectId = node.ObjectDefinition.GlobalId;
-                if (string.IsNullOrWhiteSpace(objectId) || !counts.TryGetValue(objectId, out var remaining))
+                if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
                 {
                     continue;
                 }
@@ -57,12 +61,12 @@ namespace Bingosoft.Net.IfcMetadata
                 remaining--;
                 if (remaining > 0)
                 {
-                    counts[objectId] = remaining;
+                    counts[node.ObjectId] = remaining;
                     continue;
                 }
 
-                counts.Remove(objectId);
-                WriteMetaObject(writer, node.ObjectDefinition, node.ParentId, objectId);
+                counts.Remove(node.ObjectId);
+                WriteMetaObject(writer, node.ObjectDefinition, node.ParentId, node.ObjectId);
             }
 
             writer.WriteEndObject();
@@ -97,20 +101,21 @@ namespace Bingosoft.Net.IfcMetadata
             return new FileStream(jsonTargetFile.FullName, options);
         }
 
-        private static Dictionary<string, int> BuildObjectIdCounts(IIfcObjectDefinition root, bool preserveOrder)
+        private static Dictionary<string, int> BuildObjectIdCounts(IIfcObjectDefinition root, bool preserveOrder, List<TraversalNode> bufferedTraversal = null)
         {
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
 
             foreach (var node in EnumerateHierarchy(root, null, preserveOrder))
             {
-                var objectId = node.ObjectDefinition.GlobalId;
-                if (string.IsNullOrWhiteSpace(objectId))
+                bufferedTraversal?.Add(node);
+
+                if (string.IsNullOrWhiteSpace(node.ObjectId))
                 {
                     continue;
                 }
 
-                counts.TryGetValue(objectId, out var current);
-                counts[objectId] = current + 1;
+                counts.TryGetValue(node.ObjectId, out var current);
+                counts[node.ObjectId] = current + 1;
             }
 
             return counts;
@@ -126,11 +131,11 @@ namespace Bingosoft.Net.IfcMetadata
                 var current = stack.Pop();
                 yield return current;
 
-                PushRelatedObjects(stack, current.ObjectDefinition, current.ObjectDefinition.GlobalId, preserveOrder);
+                PushRelatedObjects(stack, current.ObjectDefinition, current.ObjectId, preserveOrder);
 
                 if (current.ObjectDefinition is IIfcSpatialStructureElement spatialElement)
                 {
-                    PushContainedElements(stack, spatialElement, current.ObjectDefinition.GlobalId, preserveOrder);
+                    PushContainedElements(stack, spatialElement, current.ObjectId, preserveOrder);
                 }
             }
         }
@@ -150,16 +155,29 @@ namespace Bingosoft.Net.IfcMetadata
                 return;
             }
 
-            var children = new List<IIfcObjectDefinition>();
-            foreach (var relation in spatialElement.ContainsElements)
+            var pooledChildren = ArrayPool<IIfcObjectDefinition>.Shared.Rent(16);
+            var childCount = 0;
+            try
             {
-                foreach (var relatedElement in relation.RelatedElements)
+                foreach (var relation in spatialElement.ContainsElements)
                 {
-                    children.Add(relatedElement);
+                    foreach (var relatedElement in relation.RelatedElements)
+                    {
+                        AddPooledChild(ref pooledChildren, ref childCount, relatedElement);
+                    }
                 }
-            }
 
-            PushChildrenOrdered(stack, children, parentObjectId);
+                PushChildrenOrdered(stack, pooledChildren, childCount, parentObjectId);
+            }
+            finally
+            {
+                if (childCount > 0)
+                {
+                    Array.Clear(pooledChildren, 0, childCount);
+                }
+
+                ArrayPool<IIfcObjectDefinition>.Shared.Return(pooledChildren, clearArray: false);
+            }
         }
 
         private static void PushRelatedObjects(Stack<TraversalNode> stack, IIfcObjectDefinition objectDefinition, string parentObjectId, bool preserveOrder)
@@ -177,31 +195,57 @@ namespace Bingosoft.Net.IfcMetadata
                 return;
             }
 
-            var children = new List<IIfcObjectDefinition>();
-            foreach (var relation in objectDefinition.IsDecomposedBy)
+            var pooledChildren = ArrayPool<IIfcObjectDefinition>.Shared.Rent(16);
+            var childCount = 0;
+            try
             {
-                foreach (var relatedObject in relation.RelatedObjects)
+                foreach (var relation in objectDefinition.IsDecomposedBy)
                 {
-                    children.Add(relatedObject);
+                    foreach (var relatedObject in relation.RelatedObjects)
+                    {
+                        AddPooledChild(ref pooledChildren, ref childCount, relatedObject);
+                    }
                 }
-            }
 
-            PushChildrenOrdered(stack, children, parentObjectId);
+                PushChildrenOrdered(stack, pooledChildren, childCount, parentObjectId);
+            }
+            finally
+            {
+                if (childCount > 0)
+                {
+                    Array.Clear(pooledChildren, 0, childCount);
+                }
+
+                ArrayPool<IIfcObjectDefinition>.Shared.Return(pooledChildren, clearArray: false);
+            }
         }
 
-        private static void PushChildrenOrdered(Stack<TraversalNode> stack, List<IIfcObjectDefinition> children, string parentObjectId)
+        private static void PushChildrenOrdered(Stack<TraversalNode> stack, IIfcObjectDefinition[] children, int childCount, string parentObjectId)
         {
-            if (children.Count == 0)
+            if (childCount == 0)
             {
                 return;
             }
 
-            children.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
+            Array.Sort(children, 0, childCount, GlobalIdComparer);
 
-            for (var i = children.Count - 1; i >= 0; i--)
+            for (var i = childCount - 1; i >= 0; i--)
             {
                 stack.Push(new TraversalNode(children[i], parentObjectId));
             }
+        }
+
+        private static void AddPooledChild(ref IIfcObjectDefinition[] pooledChildren, ref int childCount, IIfcObjectDefinition child)
+        {
+            if (childCount == pooledChildren.Length)
+            {
+                var grown = ArrayPool<IIfcObjectDefinition>.Shared.Rent(pooledChildren.Length * 2);
+                Array.Copy(pooledChildren, grown, childCount);
+                ArrayPool<IIfcObjectDefinition>.Shared.Return(pooledChildren, clearArray: false);
+                pooledChildren = grown;
+            }
+
+            pooledChildren[childCount++] = child;
         }
 
         private static void WriteMetaObject(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition, string parentId, string objectId)
@@ -303,11 +347,14 @@ namespace Bingosoft.Net.IfcMetadata
             {
                 ObjectDefinition = objectDefinition;
                 ParentId = parentId;
+                ObjectId = objectDefinition.GlobalId;
             }
 
             internal IIfcObjectDefinition ObjectDefinition { get; }
 
             internal string ParentId { get; }
+
+            internal string ObjectId { get; }
         }
     }
 
