@@ -285,7 +285,6 @@ if (-not (Test-Path -Path $IfcFilePath))
 $resolvedIfcPath = (Resolve-Path $IfcFilePath).Path
 $env:IFC_BENCHMARK_FILE = $resolvedIfcPath
 $artifactDir = Join-Path (Get-Location) "BenchmarkDotNet.Artifacts/results"
-$env:IFC_BENCHMARK_TELEMETRY_DIR = $artifactDir
 
 if (-not $SkipTests)
 {
@@ -346,26 +345,6 @@ Copy-Item $currentMdArtifact $latestMd -Force
 
 Copy-Item $currentCsvArtifact (Join-Path $resultsDir "$stamp-IfcFilePipelineBenchmark-report.csv") -Force
 Copy-Item $currentMdArtifact (Join-Path $resultsDir "$stamp-IfcFilePipelineBenchmark-report-github.md") -Force
-
-$telemetryArtifacts = Get-ChildItem -Path $artifactDir -Filter "IfcFilePipelineBenchmark-accessor-telemetry-*.md" -File -ErrorAction SilentlyContinue
-$latestTelemetryFiles = New-Object System.Collections.Generic.List[string]
-if ($telemetryArtifacts)
-{
-    foreach ($telemetryArtifact in $telemetryArtifacts)
-    {
-        $latestTelemetryPath = Join-Path $latestDir $telemetryArtifact.Name
-        $previousTelemetryPath = Join-Path $previousDir $telemetryArtifact.Name
-
-        if (Test-Path $latestTelemetryPath)
-        {
-            Copy-Item $latestTelemetryPath $previousTelemetryPath -Force
-        }
-
-        Copy-Item $telemetryArtifact.FullName $latestTelemetryPath -Force
-        Copy-Item $telemetryArtifact.FullName (Join-Path $resultsDir "$stamp-$($telemetryArtifact.Name)") -Force
-        $latestTelemetryFiles.Add($latestTelemetryPath)
-    }
-}
 
 $comparisonSourcePath = $null
 $comparisonSourceLabel = $null
@@ -454,23 +433,6 @@ $lines.Add("| Previous no-order vs ordered difference | $(Format-DeltaPair $prev
 $lines.Add("| Ordered current vs previous difference | $(Format-DeltaPair $currentOrdered $previousOrdered) |")
 $lines.Add("| No-order current vs previous difference | $(Format-DeltaPair $currentNoOrder $previousNoOrder) |")
 
-$lines.Add("")
-$lines.Add("## Accessor telemetry artifacts")
-$lines.Add("")
-
-if ($latestTelemetryFiles.Count -eq 0)
-{
-    $lines.Add("Telemetry artifacts were not found for this run.")
-}
-else
-{
-    foreach ($telemetryPath in $latestTelemetryFiles)
-    {
-        $telemetryFileName = Split-Path $telemetryPath -Leaf
-        $lines.Add("- $telemetryFileName")
-    }
-}
-
 $lines | Set-Content -Path $comparisonFileLatest -Encoding UTF8
 $lines | Set-Content -Path $comparisonFileStamped -Encoding UTF8
 
@@ -482,14 +444,6 @@ if (Test-Path $previousFromGitPath)
 Write-Host "Saved benchmark snapshots to: $resultsDir"
 Write-Host "Saved latest comparison report: $comparisonFileLatest"
 Write-Host "Saved stamped comparison report: $comparisonFileStamped"
-if ($latestTelemetryFiles.Count -gt 0)
-{
-    Write-Host "Saved telemetry snapshots:" 
-    foreach ($telemetryPath in $latestTelemetryFiles)
-    {
-        Write-Host " - $telemetryPath"
-    }
-}
 
 if (Test-Path "BenchmarkDotNet.Artifacts")
 {

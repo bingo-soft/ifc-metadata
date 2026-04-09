@@ -35,9 +35,12 @@ internal static class Program
             var managedMemoryBefore = GC.GetTotalMemory(forceFullCollection: false);
             var stopwatch = Stopwatch.StartNew();
 
+            IfcAccessors.SetTelemetryEnabled(verbosity is not Verbosity.None);
             IfcAccessors.ResetTelemetry();
+
             var exportReport = IfcStreamingJsonExporter.Export(
                 ifcSourceFile,
+
                 jsonTargetFile,
                 preserveOrder,
                 outputBufferSize,

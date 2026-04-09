@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 
@@ -37,11 +36,12 @@ namespace Bingosoft.Net.IfcMetadata
             using var stream = OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
             using var writer = new Utf8JsonWriter(stream, WriterOptions);
 
-            writer.WriteStartObject();
+                        writer.WriteStartObject();
             writer.WriteString("id", project.Name);
             writer.WriteString("projectId", project.GlobalId.ToString());
             writer.WriteString("author", GetAuthor(model.Header.FileName.AuthorName));
             writer.WriteString("createdAt", model.Header.TimeStamp);
+
             writer.WriteString("schema", schemaVersion);
             writer.WriteString("creatingApplication", model.Header.CreatingApplication);
             writer.WriteStartObject("metaObjects");
@@ -62,7 +62,7 @@ namespace Bingosoft.Net.IfcMetadata
                 }
 
                 counts.Remove(objectId);
-                WriteMetaObject(writer, node.ObjectDefinition, node.ParentId);
+                WriteMetaObject(writer, node.ObjectDefinition, node.ParentId, objectId);
             }
 
             writer.WriteEndObject();
@@ -137,6 +137,19 @@ namespace Bingosoft.Net.IfcMetadata
 
         private static void PushContainedElements(Stack<TraversalNode> stack, IIfcSpatialStructureElement spatialElement, string parentObjectId, bool preserveOrder)
         {
+            if (!preserveOrder)
+            {
+                foreach (var relation in spatialElement.ContainsElements)
+                {
+                    foreach (var relatedElement in relation.RelatedElements)
+                    {
+                        stack.Push(new TraversalNode(relatedElement, parentObjectId));
+                    }
+                }
+
+                return;
+            }
+
             var children = new List<IIfcObjectDefinition>();
             foreach (var relation in spatialElement.ContainsElements)
             {
@@ -146,11 +159,24 @@ namespace Bingosoft.Net.IfcMetadata
                 }
             }
 
-            PushChildren(stack, children, parentObjectId, preserveOrder);
+            PushChildrenOrdered(stack, children, parentObjectId);
         }
 
         private static void PushRelatedObjects(Stack<TraversalNode> stack, IIfcObjectDefinition objectDefinition, string parentObjectId, bool preserveOrder)
         {
+            if (!preserveOrder)
+            {
+                foreach (var relation in objectDefinition.IsDecomposedBy)
+                {
+                    foreach (var relatedObject in relation.RelatedObjects)
+                    {
+                        stack.Push(new TraversalNode(relatedObject, parentObjectId));
+                    }
+                }
+
+                return;
+            }
+
             var children = new List<IIfcObjectDefinition>();
             foreach (var relation in objectDefinition.IsDecomposedBy)
             {
@@ -160,20 +186,17 @@ namespace Bingosoft.Net.IfcMetadata
                 }
             }
 
-            PushChildren(stack, children, parentObjectId, preserveOrder);
+            PushChildrenOrdered(stack, children, parentObjectId);
         }
 
-        private static void PushChildren(Stack<TraversalNode> stack, List<IIfcObjectDefinition> children, string parentObjectId, bool preserveOrder)
+        private static void PushChildrenOrdered(Stack<TraversalNode> stack, List<IIfcObjectDefinition> children, string parentObjectId)
         {
             if (children.Count == 0)
             {
                 return;
             }
 
-            if (preserveOrder)
-            {
-                children.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
-            }
+            children.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
 
             for (var i = children.Count - 1; i >= 0; i--)
             {
@@ -181,26 +204,13 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        private readonly struct TraversalNode
+        private static void WriteMetaObject(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition, string parentId, string objectId)
         {
-            internal TraversalNode(IIfcObjectDefinition objectDefinition, string parentId)
-            {
-                ObjectDefinition = objectDefinition;
-                ParentId = parentId;
-            }
+            writer.WriteStartObject(objectId);
 
-            internal IIfcObjectDefinition ObjectDefinition { get; }
-
-            internal string ParentId { get; }
-        }
-
-        private static void WriteMetaObject(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition, string parentId)
-        {
-            writer.WriteStartObject(objectDefinition.GlobalId);
-
-            writer.WriteString("id", objectDefinition.GlobalId.ToString());
+            writer.WriteString("id", objectId);
             writer.WriteString("name", objectDefinition.Name);
-            writer.WriteString("type", objectDefinition.GetType().Name);
+            writer.WriteString("type", IfcAccessors.GetRuntimeTypeName(objectDefinition));
             writer.WriteString("parent", parentId);
 
             WriteProperties(writer, objectDefinition);
@@ -261,17 +271,43 @@ namespace Bingosoft.Net.IfcMetadata
                 return string.Empty;
             }
 
-            var builder = new StringBuilder();
+            var totalLength = authors.Count - 1;
             for (var i = 0; i < authors.Count; i++)
             {
-                builder.Append(authors[i]);
-                if (i < authors.Count - 1)
-                {
-                    builder.Append(';');
-                }
+                totalLength += authors[i]?.Length ?? 0;
             }
 
-            return builder.ToString();
+            return string.Create(totalLength, authors, static (destination, state) =>
+            {
+                var position = 0;
+                for (var i = 0; i < state.Count; i++)
+                {
+                    var author = state[i];
+                    if (!string.IsNullOrEmpty(author))
+                    {
+                        author.AsSpan().CopyTo(destination[position..]);
+                        position += author.Length;
+                    }
+
+                    if (i < state.Count - 1)
+                    {
+                        destination[position++] = ';';
+                    }
+                }
+            });
+        }
+
+        private readonly struct TraversalNode
+        {
+            internal TraversalNode(IIfcObjectDefinition objectDefinition, string parentId)
+            {
+                ObjectDefinition = objectDefinition;
+                ParentId = parentId;
+            }
+
+            internal IIfcObjectDefinition ObjectDefinition { get; }
+
+            internal string ParentId { get; }
         }
     }
 
@@ -288,6 +324,7 @@ namespace Bingosoft.Net.IfcMetadata
         internal int MetaObjectCount { get; }
     }
 }
+
 
 
 

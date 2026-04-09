@@ -14,6 +14,7 @@ namespace Bingosoft.Net.IfcMetadata
     internal static class IfcAccessors
     {
         private static readonly ConcurrentDictionary<Type, TypedIdStrategy> TypedIdStrategyCache = new();
+        private static readonly ConcurrentDictionary<Type, string> RuntimeTypeNameCache = new();
 
         internal static IfcAccessorTelemetrySnapshot GetTelemetrySnapshot()
         {
@@ -23,6 +24,17 @@ namespace Bingosoft.Net.IfcMetadata
         internal static void ResetTelemetry()
         {
             IfcAccessorTelemetry.Reset();
+        }
+
+        internal static void SetTelemetryEnabled(bool enabled)
+        {
+            IfcAccessorTelemetry.SetEnabled(enabled);
+        }
+
+        internal static string GetRuntimeTypeName(object value)
+        {
+            var type = value.GetType();
+            return RuntimeTypeNameCache.GetOrAdd(type, static t => t.Name);
         }
 
         internal static string GetTypedId(IIfcObjectDefinition element)
@@ -119,7 +131,7 @@ namespace Bingosoft.Net.IfcMetadata
             IfcAccessorTelemetry.TrackFallback(AccessorKind.TypedId, runtimeType);
 
             var delegates = IfcAccessorDelegateCache.GetOrCreate(runtimeType);
-            var typedByValue = delegates.GetTypedBy is null ? null : delegates.GetTypedBy(element);
+            var typedByValue = delegates.GetTypedBy?.Invoke(element);
             return TryExtractGlobalId(typedByValue, out typedId);
         }
 
@@ -136,13 +148,13 @@ namespace Bingosoft.Net.IfcMetadata
             {
                 IfcAccessorTelemetry.TrackFast(AccessorKind.MaterialId);
                 var directTypeName = material.ExpressType.Name;
-                return $"{directTypeName}_{directLabel.Value}";
+                return CreateMaterialId(directTypeName, directLabel.Value);
             }
 
             IfcAccessorTelemetry.TrackFallback(AccessorKind.MaterialId, objectDefinition.GetType());
 
             var delegates = IfcAccessorDelegateCache.GetOrCreate(objectDefinition.GetType());
-            var materialValue = delegates.GetMaterial is null ? null : delegates.GetMaterial(objectDefinition);
+            var materialValue = delegates.GetMaterial?.Invoke(objectDefinition);
             if (materialValue is null
                 || !TryGetEntityLabel(materialValue, out var fallbackLabel)
                 || !fallbackLabel.HasValue)
@@ -150,8 +162,8 @@ namespace Bingosoft.Net.IfcMetadata
                 return null;
             }
 
-            var fallbackTypeName = materialValue.GetType().Name;
-            return $"{fallbackTypeName}_{fallbackLabel.Value}";
+            var fallbackTypeName = GetRuntimeTypeName(materialValue);
+            return CreateMaterialId(fallbackTypeName, fallbackLabel.Value);
         }
 
         internal static bool TryGetEntityLabel(object value, out int? entityLabel)
@@ -166,15 +178,11 @@ namespace Bingosoft.Net.IfcMetadata
             IfcAccessorTelemetry.TrackFallback(AccessorKind.EntityLabel, value.GetType());
 
             var delegates = IfcAccessorDelegateCache.GetOrCreate(value.GetType());
-            if (delegates.GetEntityLabel is not null)
+            var rawLabel = delegates.GetEntityLabel?.Invoke(value);
+            if (rawLabel is int intLabel)
             {
-                var rawLabel = delegates.GetEntityLabel(value);
-                if (rawLabel is int intLabel)
-                {
-                    entityLabel = intLabel;
-                    return true;
-                }
-
+                entityLabel = intLabel;
+                return true;
             }
 
             entityLabel = null;
@@ -183,59 +191,107 @@ namespace Bingosoft.Net.IfcMetadata
 
         internal static bool TryExtractGlobalId(object value, out string globalId)
         {
-            switch (value)
+            while (true)
             {
-                case null:
-                    globalId = null;
-                    return false;
-                case string stringValue when !string.IsNullOrWhiteSpace(stringValue):
-                    IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
-                    globalId = stringValue;
-                    return true;
-                case Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId global2x3Id:
-                    IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
-                    globalId = global2x3Id.Value.ToString();
-                    return true;
-                case Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId global4Id:
-                    IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
-                    globalId = global4Id.Value.ToString();
-                    return true;
-                case IIfcRelDefinesByType relation:
-                    return TryExtractGlobalId(relation.RelatingType, out globalId);
-                case IIfcRoot ifcRoot when !string.IsNullOrWhiteSpace(ifcRoot.GlobalId):
-                    IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
-                    globalId = ifcRoot.GlobalId;
-                    return true;
-                case IEnumerable collection:
-                    foreach (var item in collection)
-                    {
-                        if (TryExtractGlobalId(item, out globalId))
+                switch (value)
+                {
+                    case null:
+                        globalId = null;
+                        return false;
+                    case string stringValue when !string.IsNullOrWhiteSpace(stringValue):
+                        IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
+                        globalId = stringValue;
+                        return true;
+                    case Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId global2x3Id:
+                        IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
+                        globalId = global2x3Id.Value.ToString();
+                        return true;
+                    case Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId global4Id:
+                        IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
+                        globalId = global4Id.Value.ToString();
+                        return true;
+                    case IIfcRelDefinesByType relation:
+                        value = relation.RelatingType;
+                        continue;
+                    case IIfcRoot ifcRoot when !string.IsNullOrWhiteSpace(ifcRoot.GlobalId):
+                        IfcAccessorTelemetry.TrackFast(AccessorKind.GlobalId);
+                        globalId = ifcRoot.GlobalId;
+                        return true;
+                    case IEnumerable collection:
+                        foreach (var item in collection)
                         {
-                            return true;
+                            if (TryExtractGlobalId(item, out globalId))
+                            {
+                                return true;
+                            }
                         }
-                    }
 
-                    globalId = null;
-                    return false;
-                default:
-                    IfcAccessorTelemetry.TrackFallback(AccessorKind.GlobalId, value.GetType());
-
-                    var delegates = IfcAccessorDelegateCache.GetOrCreate(value.GetType());
-                    if (delegates.GetGlobalId is null)
-                    {
                         globalId = null;
                         return false;
-                    }
+                    default:
+                        IfcAccessorTelemetry.TrackFallback(AccessorKind.GlobalId, value.GetType());
 
-                    var rawGlobalId = delegates.GetGlobalId(value);
-                    if (ReferenceEquals(rawGlobalId, value))
-                    {
-                        globalId = null;
-                        return false;
-                    }
+                        var delegates = IfcAccessorDelegateCache.GetOrCreate(value.GetType());
+                        if (delegates.GetGlobalId is null)
+                        {
+                            globalId = null;
+                            return false;
+                        }
 
-                    return TryExtractGlobalId(rawGlobalId, out globalId);
+                        var rawGlobalId = delegates.GetGlobalId(value);
+                        if (ReferenceEquals(rawGlobalId, value))
+                        {
+                            globalId = null;
+                            return false;
+                        }
+
+                        value = rawGlobalId;
+                        continue;
+                }
             }
+        }
+
+        private static string CreateMaterialId(string typeName, int entityLabel)
+        {
+            var labelLength = GetInt32StringLength(entityLabel);
+            return string.Create(typeName.Length + 1 + labelLength, new MaterialIdState(typeName, entityLabel), static (destination, state) =>
+            {
+                state.TypeName.AsSpan().CopyTo(destination);
+                var offset = state.TypeName.Length;
+                destination[offset++] = '_';
+                state.EntityLabel.TryFormat(destination[offset..], out _);
+            });
+        }
+
+        private static int GetInt32StringLength(int value)
+        {
+            if (value == int.MinValue)
+            {
+                return 11;
+            }
+
+            var length = value < 0 ? 2 : 1;
+            var remaining = value < 0 ? -value : value;
+            while (remaining >= 10)
+            {
+                remaining /= 10;
+                length++;
+            }
+
+            return length;
+        }
+
+        private readonly struct MaterialIdState
+        {
+            internal MaterialIdState(string typeName, int entityLabel)
+            {
+                TypeName = typeName;
+                EntityLabel = entityLabel;
+            }
+
+            internal string TypeName { get; }
+
+            internal int EntityLabel { get; }
         }
     }
 
@@ -256,6 +312,7 @@ namespace Bingosoft.Net.IfcMetadata
 
     internal static class IfcAccessorTelemetry
     {
+        private static int _enabled = 1;
         private static long _typedIdFastHits;
         private static long _typedIdFallbackHits;
         private static long _materialIdFastHits;
@@ -269,6 +326,11 @@ namespace Bingosoft.Net.IfcMetadata
 
         internal static void TrackFast(AccessorKind kind)
         {
+            if (Volatile.Read(ref _enabled) == 0)
+            {
+                return;
+            }
+
             switch (kind)
             {
                 case AccessorKind.TypedId:
@@ -288,6 +350,11 @@ namespace Bingosoft.Net.IfcMetadata
 
         internal static void TrackFallback(AccessorKind kind, Type type)
         {
+            if (Volatile.Read(ref _enabled) == 0)
+            {
+                return;
+            }
+
             switch (kind)
             {
                 case AccessorKind.TypedId:
@@ -310,6 +377,11 @@ namespace Bingosoft.Net.IfcMetadata
 
         internal static IfcAccessorTelemetrySnapshot GetSnapshot()
         {
+            if (Volatile.Read(ref _enabled) == 0)
+            {
+                return new IfcAccessorTelemetrySnapshot(0, 0, 0, 0, 0, 0, 0, 0, new Dictionary<string, long>());
+            }
+
             return new IfcAccessorTelemetrySnapshot(
                 Interlocked.Read(ref _typedIdFastHits),
                 Interlocked.Read(ref _typedIdFallbackHits),
@@ -333,6 +405,15 @@ namespace Bingosoft.Net.IfcMetadata
             Interlocked.Exchange(ref _globalIdFastHits, 0);
             Interlocked.Exchange(ref _globalIdFallbackHits, 0);
             FallbackTypeHits.Clear();
+        }
+
+        internal static void SetEnabled(bool enabled)
+        {
+            Volatile.Write(ref _enabled, enabled ? 1 : 0);
+            if (!enabled)
+            {
+                Reset();
+            }
         }
     }
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.9.0] - 2026-04-09 23:34
+
+### Summary
+- Optimized IFC extraction hot paths in accessors and streaming traversal to reduce fallback overhead and transient allocations.
+- Updated benchmark flow to run only baseline comparison for execution time and memory with telemetry disabled.
+- Refreshed benchmark snapshots and comparison reports for the current baseline cycle.
+
+### Changed
+- Updated `src/IfcAccessors.cs`:
+  - added runtime type-name cache and material id string creation via `string.Create`;
+  - reduced delegate invocation overhead (`?.Invoke`) and converted recursive GlobalId extraction path to iterative loop;
+  - added telemetry enable/disable switch for low-overhead runs.
+- Updated `src/IfcStreamingJsonExporter.cs` and `src/MetadataExtractor.cs`:
+  - reused cached runtime type names;
+  - reduced intermediate allocations in hierarchy traversal when `PreserveOrder=false`;
+  - removed repeated `GlobalId` conversions in writer path.
+- Updated benchmark tooling:
+  - `benchmarks/IfcFilePipelineBenchmark.cs` now runs with `TelemetryEnabled=false` only and keeps `MemoryDiagnoser` for time/memory baseline;
+  - `benchmarks/run-baseline.ps1` generates comparison by time/memory without telemetry artifact processing;
+  - refreshed `benchmarks/results/latest/*`, `benchmarks/results/previous/*`, and added stamped snapshots (`2026-04-09-233445-*`).
+- Updated `README.md` benchmark workflow section to match telemetry-disabled baseline reporting.
+
 ## [1.8.0] - 2026-04-09 22:21
 
 ### Summary

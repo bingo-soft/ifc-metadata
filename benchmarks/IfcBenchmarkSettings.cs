@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 internal static class IfcBenchmarkSettings
 {
     private const string IfcPathEnvironmentVariable = "IFC_BENCHMARK_FILE";

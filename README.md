@@ -222,12 +222,10 @@ What script does automatically:
 - updates rolling snapshot in `benchmarks/results/latest`;
 - keeps previous rolling snapshot in `benchmarks/results/previous`;
 - creates comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-comparison.md`;
-- exports accessor telemetry markdown files per `PreserveOrder` case and stores them in `benchmarks/results/latest`, `benchmarks/results/previous`, and stamped snapshots;
 - compares with pre-commit baseline from previous local cycle (`benchmarks/results/previous/*`); if unavailable, compares with previous commit (`HEAD~1`) when report exists there;
-
 - formats time and memory in comparison report by magnitude (`μs/ms/s`, `KB/MB/GB`);
-- appends telemetry artifact list to comparison report;
 - for commit-to-commit comparison, keep `benchmarks/results/latest/*` committed after each run.
+
 
 
 

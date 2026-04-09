@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Text.Json.Serialization;
 
 using Xbim.Ifc;
@@ -61,24 +61,22 @@ namespace Bingosoft.Net.IfcMetadata
         /// <returns>Returns the complete MetaModel of the IFC.</returns>
         public static MetadataExtractor FromIfc(FileInfo ifcPath)
         {
-            using (var model = IfcStore.Open(ifcPath.FullName))
-            {
-                var project = GetProject(model)
-                              ?? throw new InvalidDataException("IFC project root (IIfcProject) was not found.");
+            using var model = IfcStore.Open(ifcPath.FullName);
+            var project = GetProject(model)
+                          ?? throw new InvalidDataException("IFC project root (IIfcProject) was not found.");
 
-                var header = model.Header;
-                var extractor = new MetadataExtractor();
-                extractor.Init(
-                            project.Name,
-                            project.GlobalId,
-                            GetAuthor(header.FileName.AuthorName),
-                            header.TimeStamp,
-                            header.SchemaVersion,
-                            header.CreatingApplication);
+            var header = model.Header;
+            var extractor = new MetadataExtractor();
+            extractor.Init(
+                project.Name,
+                project.GlobalId,
+                GetAuthor(header.FileName.AuthorName),
+                header.TimeStamp,
+                header.SchemaVersion,
+                header.CreatingApplication);
 
-                extractor.MetaObjects = ExtractHierarchy(project);
-                return extractor;
-            }
+            extractor.MetaObjects = ExtractHierarchy(project);
+            return extractor;
         }
 
         private void Init(string id, string projectId, string author, string createdAt, string schema, string creatingApplication)
@@ -111,17 +109,30 @@ namespace Bingosoft.Net.IfcMetadata
                 return string.Empty;
             }
 
-            var sb = new StringBuilder();
+            var totalLength = authors.Count - 1;
             for (var i = 0; i < authors.Count; i++)
             {
-                sb.Append(authors[i]);
-                if (i < authors.Count - 1)
-                {
-                    sb.Append(';');
-                }
+                totalLength += authors[i]?.Length ?? 0;
             }
 
-            return sb.ToString();
+            return string.Create(totalLength, authors, static (destination, state) =>
+            {
+                var position = 0;
+                for (var i = 0; i < state.Count; i++)
+                {
+                    var author = state[i];
+                    if (!string.IsNullOrEmpty(author))
+                    {
+                        author.AsSpan().CopyTo(destination[position..]);
+                        position += author.Length;
+                    }
+
+                    if (i < state.Count - 1)
+                    {
+                        destination[position++] = ';';
+                    }
+                }
+            });
         }
 
         private static List<Metadata> ExtractHierarchy(IIfcObjectDefinition objectDefinition, string parentId = null)
@@ -133,15 +144,13 @@ namespace Bingosoft.Net.IfcMetadata
 
         private static void ExtractHierarchy(List<Metadata> metaObjects, IIfcObjectDefinition objectDefinition, string parentId = null)
         {
-            var objectType = objectDefinition.GetType();
             var parentObject = new Metadata
             {
                 Id = objectDefinition.GlobalId,
                 Name = objectDefinition.Name,
-                Type = objectType.Name,
+                Type = IfcAccessors.GetRuntimeTypeName(objectDefinition),
                 Parent = parentId,
-                                TypeId = IfcAccessors.GetTypedId(objectDefinition)
-
+                TypeId = IfcAccessors.GetTypedId(objectDefinition)
             };
 
             if (objectDefinition is not IIfcProject)
@@ -153,8 +162,7 @@ namespace Bingosoft.Net.IfcMetadata
                 }
             }
 
-                        parentObject.Material = IfcAccessors.GetMaterialId(objectDefinition);
-
+            parentObject.Material = IfcAccessors.GetMaterialId(objectDefinition);
             metaObjects.Add(parentObject);
 
             if (objectDefinition is IIfcSpatialStructureElement spatialElement)
@@ -163,15 +171,14 @@ namespace Bingosoft.Net.IfcMetadata
                 {
                     foreach (var element in relation.RelatedElements)
                     {
-                                                var typeId = IfcAccessors.GetTypedId(element);
-
+                        var typeId = IfcAccessors.GetTypedId(element);
                         var mo = new Metadata
                         {
                             Id = element.GlobalId,
                             Name = element.Name,
-                            Type = element.GetType().Name,
+                            Type = IfcAccessors.GetRuntimeTypeName(element),
                             Parent = spatialElement.GlobalId,
-                            TypeId = typeId
+                            TypeId = typeId,
                         };
 
                         var props = GetProperties(element);
@@ -180,8 +187,7 @@ namespace Bingosoft.Net.IfcMetadata
                             mo.PropertyIds = props;
                         }
 
-                                                mo.Material = IfcAccessors.GetMaterialId(element);
-
+                        mo.Material = IfcAccessors.GetMaterialId(element);
 
                         metaObjects.Add(mo);
                         ExtractRelatedObjects(element, metaObjects, mo.Id);
@@ -192,15 +198,19 @@ namespace Bingosoft.Net.IfcMetadata
             ExtractRelatedObjects(objectDefinition, metaObjects, parentObject.Id);
         }
 
-        
-
         private static string[] GetMaterials(IIfcObjectDefinition objectDefinition)
         {
             var material = objectDefinition.GetType().GetProperty("Material");
-            if (material == null) return [];
+            if (material == null)
+            {
+                return [];
+            }
 
             var materialsv = material.GetValue(objectDefinition);
-            if (materialsv == null) return [];
+            if (materialsv == null)
+            {
+                return [];
+            }
 
             var materials = materialsv.GetType().GetProperty("Materials");
             if (materials != null)
@@ -209,41 +219,39 @@ namespace Bingosoft.Net.IfcMetadata
                 switch (maters)
                 {
                     case Xbim.Ifc4.ItemSet<IfcMaterial> mat1:
+                    {
+                        var materoalList = new List<string>(mat1.Count);
+                        foreach (var item in mat1)
                         {
-                            var materoalList = new List<string>(mat1.Count);
-                            foreach (var item in mat1)
-                            {
-                                materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                            }
-
-                            return materoalList.ToArray();
+                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
                         }
+
+                        return materoalList.ToArray();
+                    }
+
                     case Xbim.Ifc2x3.ItemSet<Xbim.Ifc2x3.MaterialResource.IfcMaterial> mat2:
+                    {
+                        var materoalList = new List<string>(mat2.Count);
+                        foreach (var item in mat2)
                         {
-                            var materoalList = new List<string>(mat2.Count);
-                            foreach (var item in mat2)
-                            {
-                                materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                            }
-
-                            return materoalList.ToArray();
+                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
                         }
+
+                        return materoalList.ToArray();
+                    }
+
                     default:
                         return [];
                 }
             }
-            else
-            {
-                return materialsv switch
-                {
-                    IfcMaterial material4 => [$"IfcMaterial_{material4.EntityLabel}"],
-                    Xbim.Ifc2x3.MaterialResource.IfcMaterial material2x3 => [$"IfcMaterial_{material2x3.EntityLabel}"],
-                    _ => []
-                };
-            }
-        }
 
-        
+            return materialsv switch
+            {
+                IfcMaterial material4 => [$"IfcMaterial_{material4.EntityLabel}"],
+                Xbim.Ifc2x3.MaterialResource.IfcMaterial material2x3 => [$"IfcMaterial_{material2x3.EntityLabel}"],
+                _ => [],
+            };
+        }
 
         private static void ExtractRelatedObjects(IIfcObjectDefinition objectDefinition, List<Metadata> metaObjects, string parentObjId)
         {
