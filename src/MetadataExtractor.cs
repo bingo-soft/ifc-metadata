@@ -140,7 +140,8 @@ namespace Bingosoft.Net.IfcMetadata
                 Name = objectDefinition.Name,
                 Type = objectType.Name,
                 Parent = parentId,
-                TypeId = GetTypedId(objectDefinition)
+                                TypeId = IfcAccessors.GetTypedId(objectDefinition)
+
             };
 
             if (objectDefinition is not IIfcProject)
@@ -152,7 +153,8 @@ namespace Bingosoft.Net.IfcMetadata
                 }
             }
 
-            parentObject.Material = GetMaterialsV2(objectDefinition);
+                        parentObject.Material = IfcAccessors.GetMaterialId(objectDefinition);
+
             metaObjects.Add(parentObject);
 
             if (objectDefinition is IIfcSpatialStructureElement spatialElement)
@@ -161,7 +163,8 @@ namespace Bingosoft.Net.IfcMetadata
                 {
                     foreach (var element in relation.RelatedElements)
                     {
-                        var typeId = GetTypedId(element);
+                                                var typeId = IfcAccessors.GetTypedId(element);
+
                         var mo = new Metadata
                         {
                             Id = element.GlobalId,
@@ -177,7 +180,8 @@ namespace Bingosoft.Net.IfcMetadata
                             mo.PropertyIds = props;
                         }
 
-                        mo.Material = GetMaterialsV2(element);
+                                                mo.Material = IfcAccessors.GetMaterialId(element);
+
 
                         metaObjects.Add(mo);
                         ExtractRelatedObjects(element, metaObjects, mo.Id);
@@ -188,35 +192,7 @@ namespace Bingosoft.Net.IfcMetadata
             ExtractRelatedObjects(objectDefinition, metaObjects, parentObject.Id);
         }
 
-        private static string GetTypedId(IIfcObjectDefinition element)
-        {
-            var isTypedByInfo = element.GetType().GetProperty("IsTypedBy");
-
-            var isTypedByValue = isTypedByInfo?.GetValue(element);
-            return isTypedByValue is null ? null : GetGlobalId(isTypedByValue);
-        }
-
-        private static string GetGlobalId(object obj)
-        {
-            var isTypedByGlobalIdInfo = obj.GetType().GetProperty("GlobalId");
-            if (isTypedByGlobalIdInfo is null) return null;
-
-            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo.GetValue(obj);
-            return isTypedByGlobalIdValue switch
-            {
-                Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId Global2x3Id => Global2x3Id.Value.ToString(),
-                Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId Gloval4Id => Gloval4Id.Value.ToString(),
-                _ => null
-            };
-        }
-
-        private static int? GetEntityLabel(object obj)
-        {
-            var isTypedByGlobalIdInfo = obj.GetType().GetProperty("EntityLabel");
-
-            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo?.GetValue(obj);
-            return (int?)isTypedByGlobalIdValue;
-        }
+        
 
         private static string[] GetMaterials(IIfcObjectDefinition objectDefinition)
         {
@@ -267,16 +243,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        private static string GetMaterialsV2(IIfcObjectDefinition objectDefinition)
-        {
-            var material = objectDefinition.GetType().GetProperty("Material");
-
-            var materialsv = material?.GetValue(objectDefinition);
-            if (materialsv is null) return null;
-
-            var entLabel = GetEntityLabel(materialsv);
-            return entLabel is null ? null : $"{objectDefinition.Material.ExpressType.Name}_{entLabel}";
-        }
+        
 
         private static void ExtractRelatedObjects(IIfcObjectDefinition objectDefinition, List<Metadata> metaObjects, string parentObjId)
         {

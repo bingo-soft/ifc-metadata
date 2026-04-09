@@ -180,8 +180,9 @@ namespace Bingosoft.Net.IfcMetadata
 
             WriteProperties(writer, objectDefinition);
 
-            writer.WriteString("material_id", GetMaterialsV2(objectDefinition));
-            writer.WriteString("type_id", GetTypedId(objectDefinition));
+                        writer.WriteString("material_id", IfcAccessors.GetMaterialId(objectDefinition));
+            writer.WriteString("type_id", IfcAccessors.GetTypedId(objectDefinition));
+
 
             writer.WriteEndObject();
         }
@@ -230,58 +231,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        private static string GetTypedId(IIfcObjectDefinition element)
-        {
-            var isTypedByInfo = element.GetType().GetProperty("IsTypedBy");
-            if (isTypedByInfo is null)
-            {
-                return null;
-            }
-
-            var isTypedByValue = isTypedByInfo.GetValue(element);
-            return isTypedByValue is null ? null : GetGlobalId(isTypedByValue);
-        }
-
-        private static string GetGlobalId(object obj)
-        {
-            var isTypedByGlobalIdInfo = obj.GetType().GetProperty("GlobalId");
-            if (isTypedByGlobalIdInfo is null)
-            {
-                return null;
-            }
-
-            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo.GetValue(obj);
-            return isTypedByGlobalIdValue switch
-            {
-                Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId global2x3Id => global2x3Id.Value.ToString(),
-                Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId global4Id => global4Id.Value.ToString(),
-                _ => null,
-            };
-        }
-
-        private static int? GetEntityLabel(object obj)
-        {
-            var entityLabelInfo = obj.GetType().GetProperty("EntityLabel");
-
-            var entityLabelValue = entityLabelInfo?.GetValue(obj);
-            return entityLabelValue is int value ? value : null;
-        }
-
-        private static string GetMaterialsV2(IIfcObjectDefinition objectDefinition)
-        {
-            var material = objectDefinition.GetType().GetProperty("Material");
-
-            var materialValue = material?.GetValue(objectDefinition);
-            if (materialValue is null)
-            {
-                return null;
-            }
-
-            var entityLabel = GetEntityLabel(materialValue);
-            return entityLabel is null
-                ? null
-                : $"{objectDefinition.Material.ExpressType.Name}_{entityLabel}";
-        }
+        
 
         private static string GetAuthor(IList<string> authors)
         {

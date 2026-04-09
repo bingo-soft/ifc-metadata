@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.5.0] - 2026-04-09 18:25
+
+### Summary
+- Introduced a centralized hybrid accessor layer for IFC hot paths with fast interface-based extraction and delegate-cached fallback.
+- Added runtime telemetry for accessor fast/fallback hit tracking and fallback type distribution.
+- Extended benchmark baseline workflow to export and persist accessor telemetry artifacts together with reports.
+
+### Added
+- Added `src/IfcAccessors.cs`:
+  - centralized APIs: `GetTypedId`, `GetMaterialId`, `TryGetEntityLabel`, `TryExtractGlobalId`;
+  - telemetry snapshot/reset API for benchmarks;
+  - concurrent delegate cache for fallback property access.
+- Added benchmark telemetry artifacts:
+  - `benchmarks/results/latest/IfcFilePipelineBenchmark-accessor-telemetry-PreserveOrder-True.md`
+  - `benchmarks/results/latest/IfcFilePipelineBenchmark-accessor-telemetry-PreserveOrder-False.md`
+  - stamped telemetry snapshots in `benchmarks/results/2026-04-09-181524-*`.
+
+### Changed
+- Updated `src/IfcStreamingJsonExporter.cs` and `src/MetadataExtractor.cs` to use `IfcAccessors` instead of local reflection helper methods for `type_id` and `material_id` extraction.
+- Updated `benchmarks/IfcFilePipelineBenchmark.cs` to reset accessor telemetry in setup and emit per-parameter telemetry markdown in cleanup.
+- Updated `benchmarks/run-baseline.ps1` to:
+  - set `IFC_BENCHMARK_TELEMETRY_DIR` for benchmark process;
+  - copy telemetry artifacts into `latest`, rotate to `previous`, and store stamped snapshots;
+  - include telemetry artifact list in the generated comparison report.
+- Updated `src/ifc-metadata.csproj` to exclude `ifc-metadata.Generators/**/*.cs` from main project compile.
+- Updated benchmark snapshots in `benchmarks/results/latest`, `benchmarks/results/previous`, and added stamped reports (`2026-04-09-181524-*`).
+
 ## [1.4.0] - 2026-04-09 16:27
 
 ### Summary

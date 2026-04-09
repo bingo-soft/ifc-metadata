@@ -13,7 +13,7 @@ Output: JSON document with:
 
 ## Architecture
 
-Single executable with 4 functional blocks:
+Single executable with 5 functional blocks:
 
 1. `Program` (`src/Program.cs`)
    - validates CLI arguments
@@ -30,9 +30,15 @@ Single executable with 4 functional blocks:
 3. `MetadataExtractor` (`src/MetadataExtractor.cs`)
    - keeps extraction model for non-streaming/internal scenarios
 
-4. `IfcJsonHelper` (`src/IfcJsonHelper.cs`)
+4. `IfcAccessors` (`src/IfcAccessors.cs`)
+   - centralizes `type_id` / `material_id` / `GlobalId` / `EntityLabel` access
+   - uses fast interface-based path first and cached delegate fallback for uncommon runtime shapes
+   - exposes telemetry counters for benchmark analysis
+
+5. `IfcJsonHelper` (`src/IfcJsonHelper.cs`)
    - writes JSON via `Utf8JsonWriter` from prepared metadata model
    - used in tests/benchmarks for serialization contract coverage
+
 
 
 Data shape for one model object is defined by `Metadata` (`src/Metadata.cs`).
@@ -199,10 +205,13 @@ What script does automatically:
 - updates rolling snapshot in `benchmarks/results/latest`;
 - keeps previous rolling snapshot in `benchmarks/results/previous`;
 - creates comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-comparison.md`;
+- exports accessor telemetry markdown files per `PreserveOrder` case and stores them in `benchmarks/results/latest`, `benchmarks/results/previous`, and stamped snapshots;
 - compares with pre-commit baseline from previous local cycle (`benchmarks/results/previous/*`); if unavailable, compares with previous commit (`HEAD~1`) when report exists there;
 
 - formats time and memory in comparison report by magnitude (`μs/ms/s`, `KB/MB/GB`);
+- appends telemetry artifact list to comparison report;
 - for commit-to-commit comparison, keep `benchmarks/results/latest/*` committed after each run.
+
 
 
 
@@ -214,6 +223,7 @@ What script does automatically:
 │   ├── Program.cs
 │   ├── IfcStreamingJsonExporter.cs
 │   ├── MetadataExtractor.cs
+│   ├── IfcAccessors.cs
 │   ├── IfcJsonHelper.cs
 │   ├── Metadata.cs
 │   └── ifc-metadata.csproj
@@ -237,5 +247,5 @@ What script does automatically:
 
 - No strict JSON schema file in repository (only documented contract).
 - Processing errors are returned as generic process error (`exit 1`).
-- Reflection is used for some IFC links (`IsTypedBy`, `Material`), which depends on model/runtime type shape.
+- Accessor fallback still uses runtime delegate access for uncommon IFC type shapes, so telemetry-guided tuning may be needed for hot models.
 
