@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.8.0] - 2026-04-09 22:21
+
+### Summary
+- Added configurable output stream write settings in CLI for buffer sizing and write-through mode.
+- Applied explicit output `FileStreamOptions` in streaming exporter for controlled create/write behavior.
+- Updated documentation for new output write tuning options and defaults.
+
+### Changed
+- Updated `src/Program.cs`:
+  - added CLI options `--output-buffer-kb N`, `--write-through`, `--no-write-through`;
+  - passed output stream settings into exporter;
+  - extended execution report and usage text with output stream configuration.
+- Updated `src/IfcStreamingJsonExporter.cs`:
+  - changed `Export(...)` signature to accept `outputFileBufferSize` and `writeThrough`;
+  - replaced implicit file creation with explicit `FileStreamOptions` (`FileMode.Create`, `FileAccess.Write`, `FileShare.None`, configurable `BufferSize`, `WriteThrough/SequentialScan` selection);
+  - set default output buffer to `512 KB` based on local measurement.
+- Updated `README.md` with output file write options and updated CLI contract.
+
 ## [1.7.0] - 2026-04-09 21:51
 
 ### Summary

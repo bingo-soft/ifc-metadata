@@ -4,14 +4,20 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 
-
 namespace Bingosoft.Net.IfcMetadata;
 
 internal static class Program
 {
     private static void Main(string[] args)
     {
-        if (!TryParseArguments(args, out var ifcSourceFile, out var jsonTargetFile, out var preserveOrder, out var verbosity))
+        if (!TryParseArguments(
+                args,
+                out var ifcSourceFile,
+                out var jsonTargetFile,
+                out var preserveOrder,
+                out var outputBufferSize,
+                out var writeThrough,
+                out var verbosity))
         {
             PrintUsage();
             Environment.Exit(1);
@@ -30,7 +36,12 @@ internal static class Program
             var stopwatch = Stopwatch.StartNew();
 
             IfcAccessors.ResetTelemetry();
-            var exportReport = IfcStreamingJsonExporter.Export(ifcSourceFile, jsonTargetFile, preserveOrder);
+            var exportReport = IfcStreamingJsonExporter.Export(
+                ifcSourceFile,
+                jsonTargetFile,
+                preserveOrder,
+                outputBufferSize,
+                writeThrough);
 
             stopwatch.Stop();
             var managedMemoryAfter = GC.GetTotalMemory(forceFullCollection: false);
@@ -42,6 +53,8 @@ internal static class Program
                     ifcSourceFile,
                     jsonTargetFile,
                     preserveOrder,
+                    outputBufferSize,
+                    writeThrough,
                     exportReport,
                     telemetrySnapshot,
                     stopwatch.Elapsed,
@@ -64,11 +77,15 @@ internal static class Program
         out FileInfo ifcSourceFile,
         out FileInfo jsonTargetFile,
         out bool preserveOrder,
+        out int outputBufferSize,
+        out bool writeThrough,
         out Verbosity verbosity)
     {
         ifcSourceFile = null;
         jsonTargetFile = null;
         preserveOrder = true;
+        outputBufferSize = IfcStreamingJsonExporter.DefaultOutputFileBufferSize;
+        writeThrough = false;
         verbosity = Verbosity.None;
 
         string sourcePath = null;
@@ -80,57 +97,73 @@ internal static class Program
             switch (arg)
             {
                 case "--preserve-order":
+                    if (i + 1 >= args.Length || !bool.TryParse(args[i + 1], out preserveOrder))
                     {
-                        if (i + 1 >= args.Length || !bool.TryParse(args[i + 1], out preserveOrder))
-                        {
-                            return false;
-                        }
-
-                        i++;
-                        break;
-                    }
-                case "--no-preserve-order":
-                    {
-                        preserveOrder = false;
-                        break;
-                    }
-                case "--verbosity":
-                    {
-                        if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
-                        {
-                            verbosity = Verbosity.Detailed;
-                            break;
-                        }
-
-                        if (!TryParseVerbosity(args[i + 1], out verbosity))
-                        {
-                            return false;
-                        }
-
-                        i++;
-                        break;
-                    }
-                default:
-                    {
-                        if (arg.StartsWith("--", StringComparison.Ordinal))
-                        {
-                            return false;
-                        }
-
-                        if (sourcePath is null)
-                        {
-                            sourcePath = arg;
-                            break;
-                        }
-
-                        if (targetPath is null)
-                        {
-                            targetPath = arg;
-                            break;
-                        }
-
                         return false;
                     }
+
+                    i++;
+                    break;
+
+                case "--no-preserve-order":
+                    preserveOrder = false;
+                    break;
+
+                case "--verbosity":
+                    if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                    {
+                        verbosity = Verbosity.Detailed;
+                        break;
+                    }
+
+                    if (!TryParseVerbosity(args[i + 1], out verbosity))
+                    {
+                        return false;
+                    }
+
+                    i++;
+                    break;
+
+                case "--output-buffer-kb":
+                    if (i + 1 >= args.Length
+                        || !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var bufferSizeKb)
+                        || bufferSizeKb <= 0
+                        || bufferSizeKb > int.MaxValue / 1024)
+                    {
+                        return false;
+                    }
+
+                    outputBufferSize = bufferSizeKb * 1024;
+                    i++;
+                    break;
+
+                case "--write-through":
+                    writeThrough = true;
+                    break;
+
+                case "--no-write-through":
+                    writeThrough = false;
+                    break;
+
+                default:
+                    if (arg.StartsWith("--", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    if (sourcePath is null)
+                    {
+                        sourcePath = arg;
+                        break;
+                    }
+
+                    if (targetPath is null)
+                    {
+                        targetPath = arg;
+                        break;
+                    }
+
+                    return false;
             }
         }
 
@@ -171,6 +204,8 @@ internal static class Program
         FileInfo ifcSourceFile,
         FileInfo jsonTargetFile,
         bool preserveOrder,
+        int outputBufferSize,
+        bool writeThrough,
         IfcExportReport exportReport,
         IfcAccessorTelemetrySnapshot telemetry,
         TimeSpan elapsed,
@@ -185,6 +220,8 @@ internal static class Program
         Console.WriteLine($"Source IFC: {ifcSourceFile.FullName}");
         Console.WriteLine($"Target JSON: {jsonTargetFile.FullName}");
         Console.WriteLine($"PreserveOrder: {preserveOrder}");
+        Console.WriteLine($"Output buffer: {FormatBytes(outputBufferSize)} ({outputBufferSize} bytes)");
+        Console.WriteLine($"WriteThrough: {writeThrough}");
         Console.WriteLine($"Schema: {exportReport.SchemaVersion}");
         Console.WriteLine($"MetaObjects: {exportReport.MetaObjectCount}");
         Console.WriteLine($"Output size: {FormatBytes(targetFileSize)}");
@@ -249,8 +286,10 @@ internal static class Program
         Console.WriteLine("Please specify the path to the IFC and optional output json.");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [/path_to_file.json] [--preserve-order true|false]");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc --no-preserve-order");
-        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|none]]");
+        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|none]] [--output-buffer-kb N] [--write-through|--no-write-through]");
         Console.WriteLine("Default: preserve order is true.");
+        Console.WriteLine($"Default output buffer: {IfcStreamingJsonExporter.DefaultOutputFileBufferSize / 1024} KB.");
+        Console.WriteLine("Default write-through: disabled.");
         Console.WriteLine("Default verbosity: none.");
         Console.WriteLine("If output path is not passed, target defaults to source name with .json extension.");
     }

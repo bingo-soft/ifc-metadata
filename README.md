@@ -21,6 +21,8 @@ Single executable with 5 functional blocks:
    - handles process exit code
    - accepts optional `--preserve-order true|false` (default: `true`)
    - accepts optional `--verbosity` and prints execution report (schema, telemetry, memory, elapsed time)
+   - accepts optional output file tuning flags: `--output-buffer-kb N`, `--write-through|--no-write-through`
+
 
 
 2. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
@@ -88,6 +90,12 @@ Verbosity option:
 - `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console.
 - `--verbosity none` — disable report output.
 
+Output file write options:
+- `--output-buffer-kb N` — set output stream buffer size in KB (default: `512`).
+- `--write-through` — enable `FileOptions.WriteThrough` for output stream.
+- `--no-write-through` — explicitly disable write-through (default behavior).
+
+
 
 ```bash
 dotnet run --project src/ifc-metadata.csproj -- ./path/to/source.ifc
@@ -104,7 +112,8 @@ dotnet publish ./src/ifc-metadata.csproj -c Release -r linux-x64 --self-containe
 ## CLI contract
 
 ```bash
-ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--verbosity [summary|detailed|none]]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--verbosity [summary|detailed|none]] [--output-buffer-kb N] [--write-through|--no-write-through]
+
 
 ```
 

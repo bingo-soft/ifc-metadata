@@ -12,12 +12,19 @@ namespace Bingosoft.Net.IfcMetadata
 {
     internal static class IfcStreamingJsonExporter
     {
+        internal const int DefaultOutputFileBufferSize = 512 * 1024;
+
         private static readonly JsonWriterOptions WriterOptions = new()
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };
 
-                internal static IfcExportReport Export(FileInfo ifcSourceFile, FileInfo jsonTargetFile, bool preserveOrder)
+        internal static IfcExportReport Export(
+            FileInfo ifcSourceFile,
+            FileInfo jsonTargetFile,
+            bool preserveOrder,
+            int outputFileBufferSize = DefaultOutputFileBufferSize,
+            bool writeThrough = false)
         {
             using var model = IfcStore.Open(ifcSourceFile.FullName);
             var project = model.Instances.FirstOrDefault<IIfcProject>()
@@ -27,18 +34,16 @@ namespace Bingosoft.Net.IfcMetadata
             var counts = BuildObjectIdCounts(project, preserveOrder);
             var uniqueMetaObjects = counts.Count;
 
-            using var stream = File.Create(jsonTargetFile.FullName);
+            using var stream = OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
             using var writer = new Utf8JsonWriter(stream, WriterOptions);
 
             writer.WriteStartObject();
-
             writer.WriteString("id", project.Name);
             writer.WriteString("projectId", project.GlobalId.ToString());
             writer.WriteString("author", GetAuthor(model.Header.FileName.AuthorName));
             writer.WriteString("createdAt", model.Header.TimeStamp);
             writer.WriteString("schema", schemaVersion);
             writer.WriteString("creatingApplication", model.Header.CreatingApplication);
-
             writer.WriteStartObject("metaObjects");
 
             foreach (var node in EnumerateHierarchy(project, null, preserveOrder))
@@ -62,6 +67,8 @@ namespace Bingosoft.Net.IfcMetadata
 
             writer.WriteEndObject();
             writer.WriteEndObject();
+            writer.Flush();
+            stream.Flush();
 
             return new IfcExportReport(schemaVersion, uniqueMetaObjects);
         }
@@ -74,6 +81,20 @@ namespace Bingosoft.Net.IfcMetadata
 
             var counts = BuildObjectIdCounts(project, preserveOrder);
             return counts.Count;
+        }
+
+        private static FileStream OpenOutputStream(FileInfo jsonTargetFile, int outputFileBufferSize, bool writeThrough)
+        {
+            FileStreamOptions options = new()
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                BufferSize = outputFileBufferSize,
+                Options = writeThrough ? FileOptions.WriteThrough : FileOptions.SequentialScan,
+            };
+
+            return new FileStream(jsonTargetFile.FullName, options);
         }
 
         private static Dictionary<string, int> BuildObjectIdCounts(IIfcObjectDefinition root, bool preserveOrder)
@@ -183,10 +204,8 @@ namespace Bingosoft.Net.IfcMetadata
             writer.WriteString("parent", parentId);
 
             WriteProperties(writer, objectDefinition);
-
-                        writer.WriteString("material_id", IfcAccessors.GetMaterialId(objectDefinition));
+            writer.WriteString("material_id", IfcAccessors.GetMaterialId(objectDefinition));
             writer.WriteString("type_id", IfcAccessors.GetTypedId(objectDefinition));
-
 
             writer.WriteEndObject();
         }
@@ -235,9 +254,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        
-
-                private static string GetAuthor(IList<string> authors)
+        private static string GetAuthor(IList<string> authors)
         {
             if (authors.Count == 0)
             {
@@ -271,4 +288,6 @@ namespace Bingosoft.Net.IfcMetadata
         internal int MetaObjectCount { get; }
     }
 }
+
+
 
