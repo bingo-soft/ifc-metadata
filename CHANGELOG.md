@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.10.0] - 2026-04-10 00:06
+
+### Summary
+- Implemented GC A/B benchmark matrix for `Server/Workstation` and `Concurrent/Non-concurrent` modes in the default pipeline benchmark cycle.
+- Extended baseline script reporting with GC-mode comparison report and stable case matching by `Method + PreserveOrder + Job`.
+- Refreshed benchmark artifacts and pruned old stamped `IfcFilePipelineBenchmark-*` snapshots, keeping only the latest stamped set.
+
+### Changed
+- Updated `benchmarks/IfcFilePipelineBenchmark.cs`:
+  - added explicit BenchmarkDotNet jobs: `WS_Concurrent`, `WS_NonConcurrent`, `Server_Concurrent`;
+  - configured GC modes per job via `WithGcServer(...)` and `WithGcConcurrent(...)`.
+- Updated `benchmarks/run-baseline.ps1`:
+  - comparison keys now include `Job` to support GC matrix rows;
+  - added `benchmarks/results/latest/IfcFilePipelineBenchmark-gc-comparison.md` generation;
+  - order/no-order final summary is pinned to baseline job `WS_Concurrent`;
+  - comparison source resolution now prefers `previous local run`, then falls back to `HEAD~1`.
+- Updated documentation:
+  - `benchmarks/benchmark_policy.md` with mandatory GC matrix/report rules;
+  - `README.md` benchmark section with GC jobs and GC comparison report path.
+- Updated benchmark artifacts:
+  - refreshed `benchmarks/results/latest/*` and `benchmarks/results/previous/*`;
+  - added stamped set `benchmarks/results/2026-04-10-000621-*`;
+  - removed older stamped `benchmarks/results/*-IfcFilePipelineBenchmark-*` snapshots.
+
 ## [1.9.0] - 2026-04-09 23:34
 
 ### Summary

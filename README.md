@@ -189,6 +189,8 @@ dotnet run --project benchmarks/ifc-metadata.Benchmarks.csproj -c Release -- --d
 
 Default benchmark contains only overall method in `IfcFilePipelineBenchmark`:
 - `EndToEnd_Extract_And_Serialize` with `[Params(PreserveOrder=true|false)]`
+- GC matrix jobs: `WS_Concurrent`, `WS_NonConcurrent`, `Server_Concurrent`
+
 
 Diagnostic benchmarks are available only on explicit request (`--detailed`):
 - `Extract_Only`
@@ -217,14 +219,16 @@ pwsh ./benchmarks/run-baseline.ps1 -IfcFilePath "ifc/01_26_Slavyanka_4.ifc"
 
 What script does automatically:
 - runs `dotnet test ifc-metadata.slnx -c Release`;
-- runs only overall benchmark by default (with `PreserveOrder=true|false` cases);
+- runs only overall benchmark by default for `PreserveOrder=true|false` and GC jobs `WS_Concurrent` / `WS_NonConcurrent` / `Server_Concurrent`;
 - saves timestamped CSV/MD snapshots to `benchmarks/results`;
 - updates rolling snapshot in `benchmarks/results/latest`;
 - keeps previous rolling snapshot in `benchmarks/results/previous`;
-- creates comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-comparison.md`;
+- creates run-to-run comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-comparison.md`;
+- creates GC mode comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-gc-comparison.md` (deltas vs `WS_Concurrent`);
 - compares with pre-commit baseline from previous local cycle (`benchmarks/results/previous/*`); if unavailable, compares with previous commit (`HEAD~1`) when report exists there;
 - formats time and memory in comparison report by magnitude (`μs/ms/s`, `KB/MB/GB`);
 - for commit-to-commit comparison, keep `benchmarks/results/latest/*` committed after each run.
+
 
 
 

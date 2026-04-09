@@ -166,7 +166,7 @@ function Format-SizeByMagnitude([double]$kilobytes)
 
 function Get-BenchmarkCaseName($row)
 {
-    $benchmarkParameterColumns = @('PreserveOrder')
+    $benchmarkParameterColumns = @('PreserveOrder', 'Job')
     $parameterPairs = @()
 
     foreach ($columnName in $benchmarkParameterColumns)
@@ -193,6 +193,44 @@ function Get-BenchmarkCaseName($row)
     return "$($row.Method) [$($parameterPairs -join ', ')]"
 }
 
+function Get-PropertyValueOrDefault($row, [string]$propertyName, [string]$defaultValue)
+{
+    $property = $row.PSObject.Properties[$propertyName]
+    if ($null -eq $property)
+    {
+        return $defaultValue
+    }
+
+    $valueText = [string]$property.Value
+    if ([string]::IsNullOrWhiteSpace($valueText))
+    {
+        return $defaultValue
+    }
+
+    return $valueText
+}
+
+function Get-BenchmarkCaseKey([string]$methodName, [string]$preserveOrderValue, [string]$jobName)
+{
+    return "$methodName|PreserveOrder=$preserveOrderValue|Job=$jobName"
+}
+
+function Parse-PreserveOrderValue([string]$preserveOrderText)
+{
+    if ([string]::IsNullOrWhiteSpace($preserveOrderText))
+    {
+        return $null
+    }
+
+    $parsed = $false
+    if ([bool]::TryParse($preserveOrderText, [ref]$parsed))
+    {
+        return $parsed
+    }
+
+    return $null
+}
+
 function Parse-BenchmarkCsv([string]$csvPath)
 {
     $rows = Import-Csv -Path $csvPath -Delimiter ';'
@@ -200,12 +238,22 @@ function Parse-BenchmarkCsv([string]$csvPath)
 
     foreach ($row in $rows)
     {
+        $methodName = [string]$row.Method
+        $preserveOrderValue = Get-PropertyValueOrDefault $row 'PreserveOrder' 'n/a'
+        $jobName = Get-PropertyValueOrDefault $row 'Job' 'DefaultJob'
+        $caseName = Get-BenchmarkCaseName $row
+        $caseKey = Get-BenchmarkCaseKey $methodName $preserveOrderValue $jobName
+
         $meanUs = Convert-ToMicroseconds $row.Mean
         $allocatedKb = Convert-ToKilobytes $row.Allocated
-        $caseName = Get-BenchmarkCaseName $row
 
-        $result[$caseName] = [pscustomobject]@{
-            Method = $caseName
+        $result[$caseKey] = [pscustomobject]@{
+            CaseKey = $caseKey
+            CaseName = $caseName
+            MethodName = $methodName
+            PreserveOrderText = $preserveOrderValue
+            PreserveOrder = Parse-PreserveOrderValue $preserveOrderValue
+            Job = $jobName
             MeanRaw = $row.Mean
             MeanUs = $meanUs
             MeanFormatted = Format-TimeByMagnitude $meanUs
@@ -229,26 +277,62 @@ function Format-Delta([double]$current, [double]$previous)
     return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:+0.00;-0.00;0.00}%', $delta)
 }
 
-function Find-OrderedEndToEndRow($data)
+function Find-EndToEndRow($data, [bool]$preserveOrder, [string]$jobName)
 {
     foreach ($key in $data.Keys)
     {
-        if ($key -eq 'EndToEnd_Extract_And_Serialize' -or $key -match '^EndToEnd_Extract_And_Serialize \[.*PreserveOrder=True.*\]$')
+        $row = $data[$key]
+        if ($row.MethodName -ne 'EndToEnd_Extract_And_Serialize')
         {
-            return $data[$key]
+            continue
         }
+
+        if ($row.PreserveOrder -ne $preserveOrder)
+        {
+            continue
+        }
+
+        if ($row.Job -ne $jobName)
+        {
+            continue
+        }
+
+        return $row
     }
 
     return $null
 }
 
-function Find-NoOrderEndToEndRow($data)
+function Get-CaseRows($data, [bool]$preserveOrder)
 {
+    $rows = @()
+
     foreach ($key in $data.Keys)
     {
-        if ($key -eq 'EndToEnd_Extract_And_Serialize_NoOrder' -or $key -match '^EndToEnd_Extract_And_Serialize \[.*PreserveOrder=False.*\]$')
+        $row = $data[$key]
+        if ($row.MethodName -ne 'EndToEnd_Extract_And_Serialize')
         {
-            return $data[$key]
+            continue
+        }
+
+        if ($row.PreserveOrder -ne $preserveOrder)
+        {
+            continue
+        }
+
+        $rows += $row
+    }
+
+    return $rows
+}
+
+function Get-CaseRowByJob($rows, [string]$jobName)
+{
+    foreach ($row in $rows)
+    {
+        if ($row.Job -eq $jobName)
+        {
+            return $row
         }
     }
 
@@ -350,21 +434,26 @@ $comparisonSourcePath = $null
 $comparisonSourceLabel = $null
 $previousFromGitPath = Join-Path $env:TEMP "ifc-prev-commit-benchmark-$stamp.csv"
 
-$gitPrevious = git show HEAD~1:benchmarks/results/latest/IfcFilePipelineBenchmark-report.csv 2>$null
-if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($gitPrevious -join "")))
-{
-    $gitPrevious | Set-Content -Path $previousFromGitPath -Encoding UTF8
-    $comparisonSourcePath = $previousFromGitPath
-    $comparisonSourceLabel = "previous commit (HEAD~1)"
-}
-elseif (Test-Path $previousCsv)
+if (Test-Path $previousCsv)
 {
     $comparisonSourcePath = $previousCsv
     $comparisonSourceLabel = "previous local run"
 }
+else
+{
+    $gitPrevious = git show HEAD~1:benchmarks/results/latest/IfcFilePipelineBenchmark-report.csv 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($gitPrevious -join "")))
+    {
+        $gitPrevious | Set-Content -Path $previousFromGitPath -Encoding UTF8
+        $comparisonSourcePath = $previousFromGitPath
+        $comparisonSourceLabel = "previous commit (HEAD~1)"
+    }
+}
 
 $comparisonFileLatest = Join-Path $latestDir "IfcFilePipelineBenchmark-comparison.md"
 $comparisonFileStamped = Join-Path $resultsDir "$stamp-IfcFilePipelineBenchmark-comparison.md"
+$gcComparisonFileLatest = Join-Path $latestDir "IfcFilePipelineBenchmark-gc-comparison.md"
+$gcComparisonFileStamped = Join-Path $resultsDir "$stamp-IfcFilePipelineBenchmark-gc-comparison.md"
 
 $currentData = Parse-BenchmarkCsv $latestCsv
 $previousData = $null
@@ -384,20 +473,20 @@ if ($comparisonSourcePath)
     $lines.Add("| Method | Previous Mean | Current Mean | Delta Mean | Previous Allocated | Current Allocated | Delta Allocated |")
     $lines.Add("|---|---:|---:|---:|---:|---:|---:|")
 
-    foreach ($method in $currentData.Keys)
+    foreach ($caseKey in ($currentData.Keys | Sort-Object))
     {
-        $currentRow = $currentData[$method]
-        $previousRow = $previousData[$method]
+        $currentRow = $currentData[$caseKey]
+        $previousRow = $previousData[$caseKey]
 
         if ($null -eq $previousRow)
         {
-            $lines.Add("| $method | n/a | $($currentRow.MeanFormatted) | n/a | n/a | $($currentRow.AllocatedFormatted) | n/a |")
+            $lines.Add("| $($currentRow.CaseName) | n/a | $($currentRow.MeanFormatted) | n/a | n/a | $($currentRow.AllocatedFormatted) | n/a |")
             continue
         }
 
         $deltaMean = Format-Delta $currentRow.MeanUs $previousRow.MeanUs
         $deltaAllocated = Format-Delta $currentRow.AllocatedKb $previousRow.AllocatedKb
-        $lines.Add("| $method | $($previousRow.MeanFormatted) | $($currentRow.MeanFormatted) | $deltaMean | $($previousRow.AllocatedFormatted) | $($currentRow.AllocatedFormatted) | $deltaAllocated |")
+        $lines.Add("| $($currentRow.CaseName) | $($previousRow.MeanFormatted) | $($currentRow.MeanFormatted) | $deltaMean | $($previousRow.AllocatedFormatted) | $($currentRow.AllocatedFormatted) | $deltaAllocated |")
     }
 }
 else
@@ -407,20 +496,23 @@ else
     $lines.Add("| Method | Current Mean | Current Allocated |")
     $lines.Add("|---|---:|---:|")
 
-    foreach ($method in $currentData.Keys)
+    foreach ($caseKey in ($currentData.Keys | Sort-Object))
     {
-        $row = $currentData[$method]
-        $lines.Add("| $method | $($row.MeanFormatted) | $($row.AllocatedFormatted) |")
+        $row = $currentData[$caseKey]
+        $lines.Add("| $($row.CaseName) | $($row.MeanFormatted) | $($row.AllocatedFormatted) |")
     }
 }
 
-$currentOrdered = Find-OrderedEndToEndRow $currentData
-$currentNoOrder = Find-NoOrderEndToEndRow $currentData
-$previousOrdered = if ($null -ne $previousData) { Find-OrderedEndToEndRow $previousData } else { $null }
-$previousNoOrder = if ($null -ne $previousData) { Find-NoOrderEndToEndRow $previousData } else { $null }
+$summaryJobName = 'WS_Concurrent'
+$currentOrdered = Find-EndToEndRow $currentData $true $summaryJobName
+$currentNoOrder = Find-EndToEndRow $currentData $false $summaryJobName
+$previousOrdered = if ($null -ne $previousData) { Find-EndToEndRow $previousData $true $summaryJobName } else { $null }
+$previousNoOrder = if ($null -ne $previousData) { Find-EndToEndRow $previousData $false $summaryJobName } else { $null }
 
 $lines.Add("")
 $lines.Add("## Final report order/no-order summary")
+$lines.Add("")
+$lines.Add("Summary job: $summaryJobName")
 $lines.Add("")
 $lines.Add("| Metric | Value |")
 $lines.Add("|---|---|")
@@ -436,6 +528,50 @@ $lines.Add("| No-order current vs previous difference | $(Format-DeltaPair $curr
 $lines | Set-Content -Path $comparisonFileLatest -Encoding UTF8
 $lines | Set-Content -Path $comparisonFileStamped -Encoding UTF8
 
+$gcModes = @('WS_Concurrent', 'WS_NonConcurrent', 'Server_Concurrent')
+$gcLines = New-Object System.Collections.Generic.List[string]
+$gcLines.Add("# GC mode comparison report")
+$gcLines.Add("")
+$gcLines.Add("Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+$gcLines.Add("IFC file: $resolvedIfcPath")
+$gcLines.Add("")
+
+foreach ($preserveOrder in @($false, $true))
+{
+    $sectionRows = Get-CaseRows $currentData $preserveOrder
+    $baselineRow = Get-CaseRowByJob $sectionRows 'WS_Concurrent'
+
+    $gcLines.Add("## PreserveOrder=$preserveOrder")
+    $gcLines.Add("")
+    $gcLines.Add("| GC Mode | Mean | Allocated | Delta Mean vs WS_Concurrent | Delta Allocated vs WS_Concurrent |")
+    $gcLines.Add("|---|---:|---:|---:|---:|")
+
+    foreach ($gcMode in $gcModes)
+    {
+        $row = Get-CaseRowByJob $sectionRows $gcMode
+        if ($null -eq $row)
+        {
+            $gcLines.Add("| $gcMode | n/a | n/a | n/a | n/a |")
+            continue
+        }
+
+        $deltaMean = if ($null -eq $baselineRow) { 'n/a' } else { Format-Delta $row.MeanUs $baselineRow.MeanUs }
+        $deltaAllocated = if ($null -eq $baselineRow) { 'n/a' } else { Format-Delta $row.AllocatedKb $baselineRow.AllocatedKb }
+        $gcLines.Add("| $gcMode | $($row.MeanFormatted) | $($row.AllocatedFormatted) | $deltaMean | $deltaAllocated |")
+    }
+
+    $bestMean = $sectionRows | Sort-Object -Property MeanUs | Select-Object -First 1
+    $bestAllocated = $sectionRows | Sort-Object -Property AllocatedKb | Select-Object -First 1
+
+    $gcLines.Add("")
+    $gcLines.Add("Best Mean: $(if ($null -eq $bestMean) { 'n/a' } else { "$($bestMean.Job) ($($bestMean.MeanFormatted))" })")
+    $gcLines.Add("Best Allocated: $(if ($null -eq $bestAllocated) { 'n/a' } else { "$($bestAllocated.Job) ($($bestAllocated.AllocatedFormatted))" })")
+    $gcLines.Add("")
+}
+
+$gcLines | Set-Content -Path $gcComparisonFileLatest -Encoding UTF8
+$gcLines | Set-Content -Path $gcComparisonFileStamped -Encoding UTF8
+
 if (Test-Path $previousFromGitPath)
 {
     Remove-Item $previousFromGitPath -Force
@@ -444,6 +580,8 @@ if (Test-Path $previousFromGitPath)
 Write-Host "Saved benchmark snapshots to: $resultsDir"
 Write-Host "Saved latest comparison report: $comparisonFileLatest"
 Write-Host "Saved stamped comparison report: $comparisonFileStamped"
+Write-Host "Saved latest GC comparison report: $gcComparisonFileLatest"
+Write-Host "Saved stamped GC comparison report: $gcComparisonFileStamped"
 
 if (Test-Path "BenchmarkDotNet.Artifacts")
 {
