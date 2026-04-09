@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0] - 2026-04-09 18:47
+
+### Summary
+- Implemented typed-id strategy cache in `IfcAccessors` to minimize fallback overhead on hot IFC2x3 runtime types.
+- Added explicit fast-path handling for common telemetry candidates and fast-null handling for known non-typed objects.
+- Refreshed benchmark/telemetry snapshots after optimization run.
+
+### Changed
+- Updated `src/IfcAccessors.cs`:
+  - introduced `TypedIdStrategy` and per-type cache (`ConcurrentDictionary<Type, TypedIdStrategy>`);
+  - added fast-null strategy for `IfcProject`, `IfcBuilding`, `IfcSite`, `IfcBuildingStorey`;
+  - added direct typed-by fast path for `IfcRoof`, `IfcRailing`, `IfcStair`;
+  - moved typed-id fallback into dedicated method and execute it only for `FallbackDelegate` strategy.
+- Updated benchmark artifacts in `benchmarks/results/latest`, `benchmarks/results/previous`, and added stamped snapshots (`2026-04-09-184552-*`).
+
+### Fixed
+- Reduced `TypedId` fallback rate to `0.00%` for both `PreserveOrder=False` and `PreserveOrder=True` in latest telemetry reports.
+
 ## [1.5.0] - 2026-04-09 18:25
 
 ### Summary

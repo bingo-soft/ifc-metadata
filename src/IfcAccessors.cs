@@ -13,6 +13,8 @@ namespace Bingosoft.Net.IfcMetadata
 {
     internal static class IfcAccessors
     {
+        private static readonly ConcurrentDictionary<Type, TypedIdStrategy> TypedIdStrategyCache = new();
+
         internal static IfcAccessorTelemetrySnapshot GetTelemetrySnapshot()
         {
             return IfcAccessorTelemetry.GetSnapshot();
@@ -25,32 +27,100 @@ namespace Bingosoft.Net.IfcMetadata
 
         internal static string GetTypedId(IIfcObjectDefinition element)
         {
-            if (element is not IIfcObject ifcObject)
+            if (element is null)
             {
                 return null;
             }
 
-            foreach (var relation in ifcObject.IsTypedBy)
+            if (element is IIfcObject ifcObject)
             {
-                var relatingType = relation.RelatingType;
-                if (relatingType is null)
-                {
-                    continue;
-                }
-
-                var globalId = relatingType.GlobalId;
-                if (!string.IsNullOrWhiteSpace(globalId))
+                if (TryGetTypedIdFromTypedBy(ifcObject.IsTypedBy, out var interfaceTypedId))
                 {
                     IfcAccessorTelemetry.TrackFast(AccessorKind.TypedId);
-                    return globalId;
+                    return interfaceTypedId;
+                }
+
+                IfcAccessorTelemetry.TrackFast(AccessorKind.TypedId);
+                return null;
+            }
+
+            var runtimeType = element.GetType();
+            var strategy = TypedIdStrategyCache.GetOrAdd(runtimeType, ResolveTypedIdStrategy);
+
+            switch (strategy)
+            {
+                case TypedIdStrategy.AlwaysNull:
+                    IfcAccessorTelemetry.TrackFast(AccessorKind.TypedId);
+                    return null;
+                case TypedIdStrategy.DirectTypedByHotIfc2x3:
+                    if (TryGetTypedIdFromHotIfc2x3Types(element, out var hotTypedId))
+                    {
+                        IfcAccessorTelemetry.TrackFast(AccessorKind.TypedId);
+                        return hotTypedId;
+                    }
+
+                    IfcAccessorTelemetry.TrackFast(AccessorKind.TypedId);
+                    return null;
+                default:
+                    return TryGetTypedIdViaFallback(element, runtimeType, out var fallbackTypedId)
+                        ? fallbackTypedId
+                        : null;
+            }
+        }
+
+        private static TypedIdStrategy ResolveTypedIdStrategy(Type runtimeType)
+        {
+            var fullName = runtimeType.FullName;
+            return fullName switch
+            {
+                "Xbim.Ifc2x3.ProductExtension.IfcBuildingStorey" => TypedIdStrategy.AlwaysNull,
+                "Xbim.Ifc2x3.ProductExtension.IfcBuilding" => TypedIdStrategy.AlwaysNull,
+                "Xbim.Ifc2x3.ProductExtension.IfcSite" => TypedIdStrategy.AlwaysNull,
+                "Xbim.Ifc2x3.Kernel.IfcProject" => TypedIdStrategy.AlwaysNull,
+                "Xbim.Ifc2x3.SharedBldgElements.IfcRoof" => TypedIdStrategy.DirectTypedByHotIfc2x3,
+                "Xbim.Ifc2x3.SharedBldgElements.IfcRailing" => TypedIdStrategy.DirectTypedByHotIfc2x3,
+                "Xbim.Ifc2x3.SharedBldgElements.IfcStair" => TypedIdStrategy.DirectTypedByHotIfc2x3,
+                _ => TypedIdStrategy.FallbackDelegate,
+            };
+        }
+
+        private static bool TryGetTypedIdFromHotIfc2x3Types(IIfcObjectDefinition element, out string typedId)
+        {
+            switch (element)
+            {
+                case Xbim.Ifc2x3.SharedBldgElements.IfcRoof roof:
+                    return TryExtractGlobalId(roof.IsTypedBy, out typedId);
+                case Xbim.Ifc2x3.SharedBldgElements.IfcRailing railing:
+                    return TryExtractGlobalId(railing.IsTypedBy, out typedId);
+                case Xbim.Ifc2x3.SharedBldgElements.IfcStair stair:
+                    return TryExtractGlobalId(stair.IsTypedBy, out typedId);
+                default:
+                    typedId = null;
+                    return false;
+            }
+        }
+
+        private static bool TryGetTypedIdFromTypedBy(IEnumerable typedByRelations, out string typedId)
+        {
+            foreach (var relation in typedByRelations)
+            {
+                if (TryExtractGlobalId(relation, out typedId))
+                {
+                    return true;
                 }
             }
 
-            IfcAccessorTelemetry.TrackFallback(AccessorKind.TypedId, ifcObject.GetType());
+            typedId = null;
+            return false;
+        }
 
-            var delegates = IfcAccessorDelegateCache.GetOrCreate(ifcObject.GetType());
-            var typedByValue = delegates.GetTypedBy is null ? null : delegates.GetTypedBy(ifcObject);
-            return TryExtractGlobalId(typedByValue, out var fallbackTypeId) ? fallbackTypeId : null;
+        private static bool TryGetTypedIdViaFallback(IIfcObjectDefinition element, Type runtimeType, out string typedId)
+        {
+            IfcAccessorTelemetry.TrackFallback(AccessorKind.TypedId, runtimeType);
+
+            var delegates = IfcAccessorDelegateCache.GetOrCreate(runtimeType);
+            var typedByValue = delegates.GetTypedBy is null ? null : delegates.GetTypedBy(element);
+            return TryExtractGlobalId(typedByValue, out typedId);
         }
 
         internal static string GetMaterialId(IIfcObjectDefinition objectDefinition)
@@ -167,6 +237,13 @@ namespace Bingosoft.Net.IfcMetadata
                     return TryExtractGlobalId(rawGlobalId, out globalId);
             }
         }
+    }
+
+    internal enum TypedIdStrategy
+    {
+        AlwaysNull,
+        DirectTypedByHotIfc2x3,
+        FallbackDelegate,
     }
 
     internal enum AccessorKind
