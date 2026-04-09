@@ -5,6 +5,63 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Convert-ToInvariantNumber([string]$numberText)
+{
+    $normalized = $numberText.Trim()
+
+    $lastComma = $normalized.LastIndexOf(',')
+    $lastDot = $normalized.LastIndexOf('.')
+
+    if ($lastComma -ge 0 -and $lastDot -ge 0)
+    {
+        $decimalSeparator = if ($lastComma -gt $lastDot) { ',' } else { '.' }
+        $thousandSeparator = if ($decimalSeparator -eq ',') { '.' } else { ',' }
+
+        $normalized = $normalized.Replace([string]$thousandSeparator, '')
+        if ($decimalSeparator -eq ',')
+        {
+            $normalized = $normalized.Replace(',', '.')
+        }
+
+        return [double]::Parse($normalized, [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    if ($lastComma -ge 0)
+    {
+        $commaCount = ($normalized.Length - $normalized.Replace(',', '').Length)
+        if ($commaCount -gt 1)
+        {
+            $normalized = $normalized.Replace(',', '')
+        }
+        else
+        {
+            $split = $normalized.Split(',')
+            $fractionLength = $split[1].Length
+            if ($fractionLength -eq 3 -and $split[0].Length -gt 3)
+            {
+                $normalized = $normalized.Replace(',', '')
+            }
+            else
+            {
+                $normalized = $normalized.Replace(',', '.')
+            }
+        }
+    }
+    elseif ($lastDot -ge 0)
+    {
+        $dotCount = ($normalized.Length - $normalized.Replace('.', '').Length)
+        if ($dotCount -gt 1)
+        {
+            $lastIndex = $normalized.LastIndexOf('.')
+            $intPart = $normalized.Substring(0, $lastIndex).Replace('.', '')
+            $fraction = $normalized.Substring($lastIndex + 1)
+            $normalized = "$intPart.$fraction"
+        }
+    }
+
+    return [double]::Parse($normalized, [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Convert-ToMicroseconds([string]$value)
 {
     if ([string]::IsNullOrWhiteSpace($value))
@@ -12,16 +69,16 @@ function Convert-ToMicroseconds([string]$value)
         return $null
     }
 
-    $trimmed = $value.Trim()
-    $match = [regex]::Match($trimmed, '^([0-9]+(?:[\.,][0-9]+)?)\s*(μs|us|ms|s)?$')
-    if (-not $match.Success)
+    $trimmed = $value.Trim().Trim('"').Replace([char]0xA0, ' ').Replace([char]0x202F, ' ')
+    $numberMatch = [regex]::Match($trimmed, '[0-9][0-9\.,]*')
+    if (-not $numberMatch.Success)
     {
         throw "Unable to parse benchmark time value: '$value'"
     }
 
-    $numberText = $match.Groups[1].Value.Replace(',', '.')
-    $number = [double]::Parse($numberText, [System.Globalization.CultureInfo]::InvariantCulture)
-    $unit = $match.Groups[2].Value
+    $number = Convert-ToInvariantNumber $numberMatch.Value
+    $unitMatch = [regex]::Match($trimmed, '(μs|µs|us|ms|s)\s*$')
+    $unit = if ($unitMatch.Success) { $unitMatch.Groups[1].Value } else { '' }
 
     switch ($unit)
     {
@@ -29,6 +86,7 @@ function Convert-ToMicroseconds([string]$value)
         'ms' { return $number * 1000 }
         'us' { return $number }
         'μs' { return $number }
+        'µs' { return $number }
         '' { return $number }
         default { throw "Unsupported time unit in benchmark value: '$value'" }
     }
@@ -41,16 +99,16 @@ function Convert-ToKilobytes([string]$value)
         return $null
     }
 
-    $trimmed = $value.Trim()
-    $match = [regex]::Match($trimmed, '^([0-9]+(?:[\.,][0-9]+)?)\s*(KB|MB|GB)?$')
-    if (-not $match.Success)
+    $trimmed = $value.Trim().Trim('"').Replace([char]0xA0, ' ').Replace([char]0x202F, ' ')
+    $numberMatch = [regex]::Match($trimmed, '[0-9][0-9\.,]*')
+    if (-not $numberMatch.Success)
     {
         throw "Unable to parse benchmark memory value: '$value'"
     }
 
-    $numberText = $match.Groups[1].Value.Replace(',', '.')
-    $number = [double]::Parse($numberText, [System.Globalization.CultureInfo]::InvariantCulture)
-    $unit = $match.Groups[2].Value
+    $number = Convert-ToInvariantNumber $numberMatch.Value
+    $unitMatch = [regex]::Match($trimmed, '(KB|MB|GB)\s*$')
+    $unit = if ($unitMatch.Success) { $unitMatch.Groups[1].Value } else { '' }
 
     switch ($unit)
     {

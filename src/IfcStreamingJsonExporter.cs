@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -56,8 +55,7 @@ namespace Bingosoft.Net.IfcMetadata
                 }
 
                 counts.Remove(objectId);
-                var metadata = CreateMetadata(node.ObjectDefinition, node.ParentId);
-                WriteMetaObject(writer, metadata);
+                WriteMetaObject(writer, node.ObjectDefinition, node.ParentId);
             }
 
             writer.WriteEndObject();
@@ -114,25 +112,47 @@ namespace Bingosoft.Net.IfcMetadata
 
         private static void PushContainedElements(Stack<TraversalNode> stack, IIfcSpatialStructureElement spatialElement, string parentObjectId, bool preserveOrder)
         {
-            var containedElements = spatialElement.ContainsElements.SelectMany(rel => rel.RelatedElements);
-            PushChildren(stack, containedElements, parentObjectId, preserveOrder);
+            var children = new List<IIfcObjectDefinition>();
+            foreach (var relation in spatialElement.ContainsElements)
+            {
+                foreach (var relatedElement in relation.RelatedElements)
+                {
+                    children.Add(relatedElement);
+                }
+            }
+
+            PushChildren(stack, children, parentObjectId, preserveOrder);
         }
 
         private static void PushRelatedObjects(Stack<TraversalNode> stack, IIfcObjectDefinition objectDefinition, string parentObjectId, bool preserveOrder)
         {
-            var relatedObjects = objectDefinition.IsDecomposedBy.SelectMany(rel => rel.RelatedObjects);
-            PushChildren(stack, relatedObjects, parentObjectId, preserveOrder);
+            var children = new List<IIfcObjectDefinition>();
+            foreach (var relation in objectDefinition.IsDecomposedBy)
+            {
+                foreach (var relatedObject in relation.RelatedObjects)
+                {
+                    children.Add(relatedObject);
+                }
+            }
+
+            PushChildren(stack, children, parentObjectId, preserveOrder);
         }
 
-        private static void PushChildren(Stack<TraversalNode> stack, IEnumerable<IIfcObjectDefinition> children, string parentObjectId, bool preserveOrder)
+        private static void PushChildren(Stack<TraversalNode> stack, List<IIfcObjectDefinition> children, string parentObjectId, bool preserveOrder)
         {
-            var ordered = preserveOrder
-                ? children.OrderBy(static x => x.GlobalId.ToString(), StringComparer.Ordinal).ToArray()
-                : children.ToArray();
-
-            for (var i = ordered.Length - 1; i >= 0; i--)
+            if (children.Count == 0)
             {
-                stack.Push(new TraversalNode(ordered[i], parentObjectId));
+                return;
+            }
+
+            if (preserveOrder)
+            {
+                children.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
+            }
+
+            for (var i = children.Count - 1; i >= 0; i--)
+            {
+                stack.Push(new TraversalNode(children[i], parentObjectId));
             }
         }
 
@@ -149,65 +169,65 @@ namespace Bingosoft.Net.IfcMetadata
             internal string ParentId { get; }
         }
 
-        private static Metadata CreateMetadata(IIfcObjectDefinition objectDefinition, string parentId)
+        private static void WriteMetaObject(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition, string parentId)
         {
-            var metadata = new Metadata
-            {
-                Id = objectDefinition.GlobalId,
-                Name = objectDefinition.Name,
-                Type = objectDefinition.GetType().Name,
-                Parent = parentId,
-                TypeId = GetTypedId(objectDefinition),
-                Material = GetMaterialsV2(objectDefinition),
-            };
+            writer.WriteStartObject(objectDefinition.GlobalId);
 
-            if (objectDefinition is IIfcProject || objectDefinition is not IIfcObject product) return metadata;
-            var propertyIds = GetProperties(product);
-            if (propertyIds.Length > 0)
-            {
-                metadata.PropertyIds = propertyIds;
-            }
+            writer.WriteString("id", objectDefinition.GlobalId.ToString());
+            writer.WriteString("name", objectDefinition.Name);
+            writer.WriteString("type", objectDefinition.GetType().Name);
+            writer.WriteString("parent", parentId);
 
-            return metadata;
+            WriteProperties(writer, objectDefinition);
+
+            writer.WriteString("material_id", GetMaterialsV2(objectDefinition));
+            writer.WriteString("type_id", GetTypedId(objectDefinition));
+
+            writer.WriteEndObject();
         }
 
-        private static void WriteMetaObject(Utf8JsonWriter writer, Metadata item)
+        private static void WriteProperties(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition)
         {
-            writer.WriteStartObject(item.Id);
-
-            writer.WriteString("id", item.Id);
-            writer.WriteString("name", item.Name);
-            writer.WriteString("type", item.Type);
-            writer.WriteString("parent", item.Parent);
-
-            if (item.PropertyIds?.Length > 0)
+            if (objectDefinition is IIfcProject || objectDefinition is not IIfcObject product)
             {
-                writer.WriteStartArray("properties");
-                foreach (var propertyId in item.PropertyIds)
+                writer.WriteNull("properties");
+                return;
+            }
+
+            var hasProperties = false;
+            foreach (var relation in product.IsDefinedBy)
+            {
+                var relatedPropertyDefinition = relation.RelatingPropertyDefinition;
+                if (relatedPropertyDefinition is null)
                 {
-                    writer.WriteStringValue(propertyId);
+                    continue;
                 }
 
+                foreach (var propertyDefinition in relatedPropertyDefinition.PropertySetDefinitions)
+                {
+                    if (propertyDefinition is not IIfcPropertySet propertySet)
+                    {
+                        continue;
+                    }
+
+                    if (!hasProperties)
+                    {
+                        writer.WriteStartArray("properties");
+                        hasProperties = true;
+                    }
+
+                    writer.WriteStringValue(propertySet.GlobalId.Value.ToString());
+                }
+            }
+
+            if (hasProperties)
+            {
                 writer.WriteEndArray();
             }
             else
             {
                 writer.WriteNull("properties");
             }
-
-            writer.WriteString("material_id", item.Material);
-            writer.WriteString("type_id", item.TypeId);
-
-            writer.WriteEndObject();
-        }
-
-        private static string[] GetProperties(IIfcObject product)
-        {
-            return product.IsDefinedBy
-                          .SelectMany(r => r.RelatingPropertyDefinition.PropertySetDefinitions)
-                          .OfType<IIfcPropertySet>()
-                          .Select(pset => pset.GlobalId.Value.ToString())
-                          .ToArray();
         }
 
         private static string GetTypedId(IIfcObjectDefinition element)

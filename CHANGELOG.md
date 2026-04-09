@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.4.0] - 2026-04-09 16:27
+
+### Summary
+- Optimized extraction/serialization hot paths by removing LINQ-heavy traversals and intermediate allocations in streaming and extractor flows.
+- Hardened benchmark baseline parsing for locale-specific and grouped numeric formats.
+- Updated benchmark workflow policy to enforce pre-commit baseline refresh and comparison against it.
+
+### Changed
+- Updated `src/IfcStreamingJsonExporter.cs`:
+  - replaced `SelectMany`/`OrderBy`/`ToArray` traversal logic with explicit loops and list sorting only when ordering is enabled;
+  - removed intermediate `Metadata` object creation in write path;
+  - switched properties emission to direct streaming write without temporary `string[]`.
+- Updated `src/MetadataExtractor.cs`:
+  - replaced LINQ in hierarchy/property/material extraction with explicit loops;
+  - removed `AddRange`-based recursive accumulation in favor of in-place list fill;
+  - optimized author join loop and project lookup without LINQ.
+- Updated `benchmarks/run-baseline.ps1` to parse benchmark time/memory values robustly across grouped separators, locale variants, and `μs/µs` units.
+- Updated `benchmarks/benchmark_policy.md` and `README.md` with pre-commit baseline rule (`tests -> benchmarks -> report`, commit refreshed `benchmarks/results/latest/*`).
+- Updated benchmark snapshots in `benchmarks/results/latest`, `benchmarks/results/previous`, and added stamped report `2026-04-09-162651-*`.
+
+### Fixed
+- Fixed baseline report generation failures on benchmark values like `1,341,927.7 μs`.
+
 ## [1.3.0] - 2026-04-09 15:19
 
 ### Summary

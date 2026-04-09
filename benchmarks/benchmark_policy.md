@@ -14,11 +14,14 @@ pwsh ./benchmarks/run-baseline.ps1 -IfcFilePath "ifc/01_26_Slavyanka_4.ifc"
 - update rolling snapshot in `benchmarks/results/latest`;
 - move previous rolling snapshot to `benchmarks/results/previous`;
 - generate comparison report;
-- compare with previous commit (`HEAD~1`) if previous commit report exists, otherwise compare with previous local run.
+- compare with pre-commit baseline (`benchmarks/results/previous/*` from the last successful cycle); if unavailable, compare with previous commit (`HEAD~1`) when report exists there.
 
 4. Additional benchmarks (`Extract_Only`, `Serialize_Only_From_Extracted_Metadata`, etc.) are diagnostic and must be run only on explicit request (`--detailed`).
 
-5. To enable comparison with previous commit, `benchmarks/results/latest/*` must be committed every time after benchmark run.
+5. Pre-commit baseline rule:
+- after tests and benchmark run, current `benchmarks/results/latest/*` is the baseline for the next local run;
+- before commit, this baseline must be updated by the same cycle (tests -> benchmarks -> report);
+- the updated `benchmarks/results/latest/*` must be committed together with code changes.
 6. Time and memory values in generated comparison report must be formatted by magnitude:
 - time: `μs` / `ms` / `s` (if value reaches seconds, use seconds);
 - memory: `KB` / `MB` / `GB` (if value reaches megabytes, use megabytes).

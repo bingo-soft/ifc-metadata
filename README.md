@@ -180,7 +180,10 @@ Model path resolution order:
 
 Rule:
 - after test run, benchmark report must be generated;
+- before commit, the current `benchmarks/results/latest/*` must be refreshed by this cycle and treated as pre-commit baseline;
+- next local run is compared with this baseline (`benchmarks/results/previous/*`);
 - formalized in `benchmarks/benchmark_policy.md`.
+
 
 
 Command for regular cycle (tests -> benchmarks -> report):
@@ -196,7 +199,8 @@ What script does automatically:
 - updates rolling snapshot in `benchmarks/results/latest`;
 - keeps previous rolling snapshot in `benchmarks/results/previous`;
 - creates comparison report `benchmarks/results/latest/IfcFilePipelineBenchmark-comparison.md`;
-- compares with previous commit (`HEAD~1`) when previous report exists there; otherwise compares with previous local run;
+- compares with pre-commit baseline from previous local cycle (`benchmarks/results/previous/*`); if unavailable, compares with previous commit (`HEAD~1`) when report exists there;
+
 - formats time and memory in comparison report by magnitude (`μs/ms/s`, `KB/MB/GB`);
 - for commit-to-commit comparison, keep `benchmarks/results/latest/*` committed after each run.
 
