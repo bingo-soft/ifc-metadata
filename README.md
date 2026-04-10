@@ -20,7 +20,7 @@ Single executable with 5 functional blocks:
    - resolves input/output files
    - handles process exit code
    - accepts optional `--preserve-order true|false` (default: `true`)
-   - accepts optional `--verbosity` and prints execution report (schema, telemetry, memory, elapsed time)
+   - accepts optional `--verbosity` with modes `detailed|timing|none`
    - accepts optional `--progress [completed|remaining]` and prints integer progress to console
    - accepts optional output file tuning flags: `--output-buffer-kb N`, `--write-through|--no-write-through`
 
@@ -88,7 +88,8 @@ Order option:
 - `--preserve-order false` or `--no-preserve-order` — no order enforcement.
 
 Verbosity option:
-- `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console.
+- `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console (includes accessor telemetry).
+- `--verbosity timing` (or `--verbosity time`) — print only elapsed execution time; accessor telemetry is disabled.
 - `--verbosity none` — disable report output.
 
 Progress option:
@@ -123,7 +124,7 @@ Published executable names:
 ## CLI contract
 
 ```bash
-ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--verbosity [summary|detailed|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
 
 
 ```

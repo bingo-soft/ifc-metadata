@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.16.0] - 2026-04-10 22:12
+
+### Summary
+- Added a dedicated `timing` verbosity mode to measure execution time without accessor telemetry output/noise.
+- Kept `detailed` report behavior for full diagnostics and telemetry.
+
+### Changed
+- Updated `src/Program.cs`:
+  - added `--verbosity timing|time` parsing;
+  - telemetry is now enabled only for `--verbosity detailed`;
+  - added timing-only output mode (`Elapsed: ... ms`) for quick performance checks.
+- Updated `README.md` CLI docs for new verbosity mode and telemetry behavior.
+- Updated `src/ifc-metadata.csproj` version to `1.16.0`.
+
 ## [1.15.0] - 2026-04-10 20:05
 
 ### Summary

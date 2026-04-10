@@ -32,12 +32,14 @@ internal static class Program
 
         try
         {
-            var process = Process.GetCurrentProcess();
-            var managedMemoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+            var managedMemoryBefore = verbosity is Verbosity.Detailed
+                ? GC.GetTotalMemory(forceFullCollection: false)
+                : 0L;
+
             var stopwatch = Stopwatch.StartNew();
             var progressReporter = CreateProgressReporter(progressMode);
 
-            IfcAccessors.SetTelemetryEnabled(verbosity is not Verbosity.None);
+            IfcAccessors.SetTelemetryEnabled(verbosity is Verbosity.Detailed);
             IfcAccessors.ResetTelemetry();
 
             var exportReport = IfcStreamingJsonExporter.Export(
@@ -54,23 +56,31 @@ internal static class Program
             }
 
             stopwatch.Stop();
-            var managedMemoryAfter = GC.GetTotalMemory(forceFullCollection: false);
 
-            if (verbosity is not Verbosity.None)
+            switch (verbosity)
             {
-                var telemetrySnapshot = IfcAccessors.GetTelemetrySnapshot();
-                PrintExecutionReport(
-                    ifcSourceFile,
-                    jsonTargetFile,
-                    preserveOrder,
-                    outputBufferSize,
-                    writeThrough,
-                    exportReport,
-                    telemetrySnapshot,
-                    stopwatch.Elapsed,
-                    managedMemoryAfter - managedMemoryBefore,
-                    process.WorkingSet64,
-                    process.PeakWorkingSet64);
+                case Verbosity.Detailed:
+                    {
+                        var process = Process.GetCurrentProcess();
+                        var telemetrySnapshot = IfcAccessors.GetTelemetrySnapshot();
+                        var managedMemoryAfter = GC.GetTotalMemory(forceFullCollection: false);
+                        PrintExecutionReport(
+                            ifcSourceFile,
+                            jsonTargetFile,
+                            preserveOrder,
+                            outputBufferSize,
+                            writeThrough,
+                            exportReport,
+                            telemetrySnapshot,
+                            stopwatch.Elapsed,
+                            managedMemoryAfter - managedMemoryBefore,
+                            process.WorkingSet64,
+                            process.PeakWorkingSet64);
+                        break;
+                    }
+                case Verbosity.Timing:
+                    PrintTimingReport(stopwatch.Elapsed);
+                    break;
             }
 
             Environment.Exit(0);
@@ -215,6 +225,10 @@ internal static class Program
             case "quiet":
                 verbosity = Verbosity.None;
                 return true;
+            case "timing":
+            case "time":
+                verbosity = Verbosity.Timing;
+                return true;
             case "normal":
             case "summary":
             case "detailed":
@@ -353,12 +367,17 @@ internal static class Program
         return string.Format(CultureInfo.InvariantCulture, "{0:0.00} {1}", value, units[unitIndex]);
     }
 
+    private static void PrintTimingReport(TimeSpan elapsed)
+    {
+        Console.WriteLine($"Elapsed: {elapsed.TotalMilliseconds.ToString("N2", CultureInfo.InvariantCulture)} ms");
+    }
+
     private static void PrintUsage()
     {
         Console.WriteLine("Please specify the path to the IFC and optional output json.");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [/path_to_file.json] [--preserve-order true|false]");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc --no-preserve-order");
-        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
+        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
         Console.WriteLine("Default: preserve order is true.");
         Console.WriteLine($"Default output buffer: {IfcStreamingJsonExporter.DefaultOutputFileBufferSize / 1024} KB.");
         Console.WriteLine("Default write-through: disabled.");
@@ -370,6 +389,7 @@ internal static class Program
     private enum Verbosity
     {
         None,
+        Timing,
         Detailed,
     }
 

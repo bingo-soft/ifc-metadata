@@ -9,7 +9,7 @@
 		<Authors>Bingosoft</Authors>
 		<Copyright>Bingosoft</Copyright>
 		<Platforms>x64</Platforms>
-		<AssemblyVersion>1.15.0</AssemblyVersion>
+		<AssemblyVersion>1.16.0</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
