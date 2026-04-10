@@ -1,0 +1,4 @@
+﻿"Label";"Schema";"MetaObjects";"ElapsedMedianMs";"ElapsedP95Ms";"JsonSizeBytes";"ManagedDeltaMedianBytes";"WorkingSetMedianBytes";"PeakWorkingSetMedianBytes";"GoldenJsonPath";"GoldenJsonSha256"
+"small";"IFC2X3";"4";"512,65";"512,65";"1256";"40936407";"102341018";"102341018";"D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-133659\golden\small.json";"1FAE26E3134CC61F2DCC6C923788171D908E9124D9E7B0DD7EE807364CCF16AB"
+"medium";"IFC2X3";"220";"1985,27";"1985,27";"111301";"259449160";"403691274";"403691274";"D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-133659\golden\medium.json";"A27F8E71E5190F9AAD2A45EFF27137BA54EDAF3C8177E367E1DBBF37B0F4DD39"
+"large";"IFC2X3";"2616";"6975,64";"6975,64";"1299379";"522599793";"781472236";"781472236";"D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-133659\golden\large.json";"370F36C92E037EFF2A6C40568351DDC2E7A81F12091A46641594E13A5E1693C3"

@@ -1,0 +1,123 @@
+﻿
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90
+91
+92
+93
+94
+95
+96
+97
+98
+99
+100
+
+=== ifc-metadata execution report ===
+Source IFC: D:\projects\bingosoft\ifc-metadata\ifc\fbf851df-840f-49e3-9e74-3900cab65d14.ifc
+Target JSON: D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-133659\large-run-1.json
+PreserveOrder: False
+Output buffer: 512.00 KB (524288 bytes)
+WriteThrough: False
+Schema: IFC2X3
+MetaObjects: 2616
+Output size: 1.24 MB
+Elapsed: 6,975.64 ms
+Managed memory delta: +498.39 MB
+Working set: 745.27 MB
+Peak working set: 745.27 MB
+
+Accessor telemetry:
+  TypedId: fast=2616, fallback=0, rate=0.00%, total=2616
+  MaterialId: fast=1836, fallback=0, rate=0.00%, total=1836
+  EntityLabel: fast=1836, fallback=0, rate=0.00%, total=1836
+  GlobalId: fast=2538, fallback=0, rate=0.00%, total=2538
+=== end of report ===

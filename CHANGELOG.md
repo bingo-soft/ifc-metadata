@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.13.0] - 2026-04-10 16:50
+
+### Summary
+- Introduced an internal compact IR layer for meta object export to decouple traversal data collection from JSON serialization.
+- Added per-export string interning and value-type meta rows to reduce repeated string storage in the exporter pipeline.
+- Refreshed benchmark baseline snapshots and generated updated comparison reports for the Slavyanka IFC dataset.
+
+### Added
+- Added `src/IfcExportIr.cs` with:
+  - `MetaRow` value-type representation for exported meta objects (`id/name/type/parent/material/type/properties range` via string indexes);
+  - export-local string table (`Dictionary<string,int>` + `List<string>`);
+  - property index buffer and IR write pipeline (`IfcExportIrPipeline`).
+
+### Changed
+- Updated `src/IfcStreamingJsonExporter.cs`, `src/Ifc4StreamingJsonExporter.cs`, and `src/Ifc2x3StreamingJsonExporter.cs`:
+  - traversal phase now builds IR rows instead of writing each meta object directly to JSON;
+  - JSON writing phase now serializes from IR without changing external JSON contract.
+- Updated benchmark artifacts:
+  - refreshed `benchmarks/results/latest/*` and rotated `benchmarks/results/previous/*` snapshots;
+  - added stamped reports `benchmarks/results/2026-04-10-163754-*`.
+
 ## [1.12.0] - 2026-04-10 12:13
 
 ### Summary

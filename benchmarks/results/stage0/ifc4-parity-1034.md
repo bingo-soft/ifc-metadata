@@ -1,0 +1,12 @@
+# IFC4 fast-path parity (1034с_К00_ОВ_П.ifc)
+
+Date: 2026-04-10
+
+| File | PreserveOrder | Fast SHA256 | Fallback SHA256 | Equal |
+|---|---|---|---|---|
+| `ifc/1034с_К00_ОВ_П.ifc` | `true` | `472AE530CE4C79F5D06A658C7301218C3F494CC49B06574198AF17D872E5AC9F` | `472AE530CE4C79F5D06A658C7301218C3F494CC49B06574198AF17D872E5AC9F` | `true` |
+| `ifc/1034с_К00_ОВ_П.ifc` | `false` | `1430226AF52D6F15A19BC1239112917AF434FCC3A5603D02B17041464C1795D7` | `1430226AF52D6F15A19BC1239112917AF434FCC3A5603D02B17041464C1795D7` | `true` |
+
+Notes:
+- Fallback forced via environment variable `IFC_FORCE_FALLBACK=1`.
+- Comparison method: SHA256 of generated JSON output.

@@ -1,0 +1,27 @@
+﻿
+0
+25
+50
+75
+100
+
+=== ifc-metadata execution report ===
+Source IFC: D:\projects\bingosoft\ifc-metadata\ifc\455--wall--infiniteLoop--augmented.ifc
+Target JSON: D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-133659\small-warmup-1.json
+PreserveOrder: False
+Output buffer: 512.00 KB (524288 bytes)
+WriteThrough: False
+Schema: IFC2X3
+MetaObjects: 4
+Output size: 1.23 KB
+Elapsed: 523.70 ms
+Managed memory delta: +38.80 MB
+Working set: 100.74 MB
+Peak working set: 100.74 MB
+
+Accessor telemetry:
+  TypedId: fast=4, fallback=0, rate=0.00%, total=4
+  MaterialId: fast=1, fallback=0, rate=0.00%, total=1
+  EntityLabel: fast=1, fallback=0, rate=0.00%, total=1
+  GlobalId: fast=1, fallback=0, rate=0.00%, total=1
+=== end of report ===

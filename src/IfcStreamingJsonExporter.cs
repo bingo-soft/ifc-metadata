@@ -22,7 +22,7 @@ namespace Bingosoft.Net.IfcMetadata
         private static readonly IComparer<IIfcObjectDefinition> GlobalIdComparer = Comparer<IIfcObjectDefinition>.Create(
             static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
 
-        internal static IfcExportReport Export(
+                internal static IfcExportReport Export(
             FileInfo ifcSourceFile,
             FileInfo jsonTargetFile,
             bool preserveOrder,
@@ -35,10 +35,36 @@ namespace Bingosoft.Net.IfcMetadata
                           ?? throw new InvalidOperationException("IFC project root (IIfcProject) was not found.");
 
             var schemaVersion = model.Header.SchemaVersion;
+            var isFallbackForced = IsFallbackForced();
+
+            if (!isFallbackForced && IfcSchemaRouter.IsIfc2x3(schemaVersion) && project is Xbim.Ifc2x3.Kernel.IfcProject ifc2x3Project)
+            {
+                return Ifc2x3StreamingJsonExporter.Export(
+                    model,
+                    ifc2x3Project,
+                    jsonTargetFile,
+                    preserveOrder,
+                    outputFileBufferSize,
+                    writeThrough,
+                    progressReporter);
+            }
+
+            if (!isFallbackForced && IfcSchemaRouter.IsIfc4(schemaVersion) && project is Xbim.Ifc4.Kernel.IfcProject ifc4Project)
+            {
+                return Ifc4StreamingJsonExporter.Export(
+                    model,
+                    ifc4Project,
+                    jsonTargetFile,
+                    preserveOrder,
+                    outputFileBufferSize,
+                    writeThrough,
+                    progressReporter);
+            }
+
             var bufferedTraversal = new List<TraversalNode>();
             var counts = BuildObjectIdCounts(project, preserveOrder, bufferedTraversal);
             var uniqueMetaObjects = counts.Count;
-            var processedMetaObjects = 0;
+            var ir = BuildExportIr(bufferedTraversal, counts, uniqueMetaObjects, progressReporter);
 
             using var stream = OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
             using var writer = new Utf8JsonWriter(stream, WriterOptions);
@@ -52,27 +78,7 @@ namespace Bingosoft.Net.IfcMetadata
             writer.WriteString("creatingApplication", model.Header.CreatingApplication);
             writer.WriteStartObject("metaObjects");
 
-            progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
-
-            foreach (var node in bufferedTraversal)
-            {
-                if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
-                {
-                    continue;
-                }
-
-                remaining--;
-                if (remaining > 0)
-                {
-                    counts[node.ObjectId] = remaining;
-                    continue;
-                }
-
-                counts.Remove(node.ObjectId);
-                WriteMetaObject(writer, node.ObjectDefinition, node.ParentId, node.ObjectId);
-                processedMetaObjects++;
-                progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
-            }
+            IfcExportIrPipeline.WriteMetaObjects(writer, ir);
 
             writer.WriteEndObject();
             writer.WriteEndObject();
@@ -240,7 +246,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        private static void AddPooledChild(ref IIfcObjectDefinition[] pooledChildren, ref int childCount, IIfcObjectDefinition child)
+                private static void AddPooledChild(ref IIfcObjectDefinition[] pooledChildren, ref int childCount, IIfcObjectDefinition child)
         {
             if (childCount == pooledChildren.Length)
             {
@@ -253,67 +259,49 @@ namespace Bingosoft.Net.IfcMetadata
             pooledChildren[childCount++] = child;
         }
 
-        private static void WriteMetaObject(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition, string parentId, string objectId)
+        private static bool IsFallbackForced()
         {
-            writer.WriteStartObject(objectId);
-
-            writer.WriteString("id", objectId);
-            writer.WriteString("name", objectDefinition.Name);
-            writer.WriteString("type", IfcAccessors.GetRuntimeTypeName(objectDefinition));
-            writer.WriteString("parent", parentId);
-
-            WriteProperties(writer, objectDefinition);
-            writer.WriteString("material_id", IfcAccessors.GetMaterialId(objectDefinition));
-            writer.WriteString("type_id", IfcAccessors.GetTypedId(objectDefinition));
-
-            writer.WriteEndObject();
+            var value = Environment.GetEnvironmentVariable("IFC_FORCE_FALLBACK");
+            return string.Equals(value, "1", StringComparison.Ordinal)
+                   || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void WriteProperties(Utf8JsonWriter writer, IIfcObjectDefinition objectDefinition)
+        private static IfcExportIr BuildExportIr(
+            List<TraversalNode> bufferedTraversal,
+            Dictionary<string, int> counts,
+            int uniqueMetaObjects,
+            Action<int, int> progressReporter)
         {
-            if (objectDefinition is IIfcProject || objectDefinition is not IIfcObject product)
-            {
-                writer.WriteNull("properties");
-                return;
-            }
+            var ir = new IfcExportIr(uniqueMetaObjects);
+            var processedMetaObjects = 0;
 
-            var hasProperties = false;
-            foreach (var relation in product.IsDefinedBy)
+            progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
+
+            foreach (var node in bufferedTraversal)
             {
-                var relatedPropertyDefinition = relation.RelatingPropertyDefinition;
-                if (relatedPropertyDefinition is null)
+                if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
                 {
                     continue;
                 }
 
-                foreach (var propertyDefinition in relatedPropertyDefinition.PropertySetDefinitions)
+                remaining--;
+                if (remaining > 0)
                 {
-                    if (propertyDefinition is not IIfcPropertySet propertySet)
-                    {
-                        continue;
-                    }
-
-                    if (!hasProperties)
-                    {
-                        writer.WriteStartArray("properties");
-                        hasProperties = true;
-                    }
-
-                    writer.WriteStringValue(propertySet.GlobalId.Value.ToString());
+                    counts[node.ObjectId] = remaining;
+                    continue;
                 }
+
+                counts.Remove(node.ObjectId);
+                IfcExportIrPipeline.AppendMetaObject(ir, node.ObjectDefinition, node.ParentId, node.ObjectId);
+
+                processedMetaObjects++;
+                progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
             }
 
-            if (hasProperties)
-            {
-                writer.WriteEndArray();
-            }
-            else
-            {
-                writer.WriteNull("properties");
-            }
+            return ir;
         }
 
-                private static string GetAuthor(IList<string> authors)
+        private static string GetAuthor(IList<string> authors)
         {
             if (authors.Count == 0)
             {

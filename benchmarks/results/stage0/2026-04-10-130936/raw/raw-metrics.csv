@@ -1,0 +1,4 @@
+"Label";"Run";"Schema";"MetaObjects";"ElapsedMs";"JsonSizeBytes";"ManagedDeltaBytes";"WorkingSetBytes";"PeakWorkingSetBytes";"LogPath"
+"small";"1";"IFC2X3";"4";"512,74";"1256";"40863007";"102739476";"102739476";"D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-130936\logs\small-run-1.log"
+"medium";"1";"IFC2X3";"220";"2073,87";"111301";"256985006";"400629432";"400629432";"D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-130936\logs\medium-run-1.log"
+"large";"1";"IFC2X3";"2616";"7139,35";"1299379";"605479240";"765512909";"765512909";"D:\projects\bingosoft\ifc-metadata\benchmarks\results\stage0\2026-04-10-130936\logs\large-run-1.log"
