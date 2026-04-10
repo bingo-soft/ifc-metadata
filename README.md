@@ -13,34 +13,44 @@ Output: JSON document with:
 
 ## Architecture
 
-Single executable with 5 functional blocks:
+Single executable with engine routing and core functional blocks:
 
 1. `Program` (`src/Program.cs`)
    - validates CLI arguments
    - resolves input/output files
    - handles process exit code
    - accepts optional `--preserve-order true|false` (default: `true`)
+   - accepts optional `--engine xbim|fast-step` (default: `xbim`)
    - accepts optional `--verbosity` with modes `detailed|timing|none`
    - accepts optional `--progress [completed|remaining]` and prints integer progress to console
    - accepts optional output file tuning flags: `--output-buffer-kb N`, `--write-through|--no-write-through`
 
 
 
-2. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
+2. `IfcEngineRouter` + engines (`src/IfcEngineRouter.cs`, `src/IfcExportEngine.cs`)
+   - routes export flow to `xbim` or `fast-step` engine.
+
+3. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
    - opens IFC model through `Xbim.Ifc.IfcStore`
    - performs streaming extraction + serialization in one pipeline
    - does not build intermediate full `List<Metadata>` for CLI export
    - applies duplicate key handling with "last occurrence wins"
 
-3. `MetadataExtractor` (`src/MetadataExtractor.cs`)
+4. `FastStepJsonExporter` + `src/FastStep/*`
+   - parses STEP entities in a lightweight scan/index pass
+   - reads IFC header metadata from STEP header
+   - emits JSON directly from fast-step indexes
+   - preserves baseline contract semantics (including dedup/last occurrence wins)
+
+5. `MetadataExtractor` (`src/MetadataExtractor.cs`)
    - keeps extraction model for non-streaming/internal scenarios
 
-4. `IfcAccessors` (`src/IfcAccessors.cs`)
+6. `IfcAccessors` (`src/IfcAccessors.cs`)
    - centralizes `type_id` / `material_id` / `GlobalId` / `EntityLabel` access
    - uses fast interface-based path first and cached delegate fallback for uncommon runtime shapes
    - exposes telemetry counters for benchmark analysis
 
-5. `IfcJsonHelper` (`src/IfcJsonHelper.cs`)
+7. `IfcJsonHelper` (`src/IfcJsonHelper.cs`)
    - writes JSON via `Utf8JsonWriter` from prepared metadata model
    - used in tests/benchmarks for serialization contract coverage
 
@@ -87,6 +97,10 @@ Order option:
 - `--preserve-order true` (default) — deterministic ordered traversal in output.
 - `--preserve-order false` or `--no-preserve-order` — no order enforcement.
 
+Engine option:
+- `--engine xbim` (default) — existing exporter through xBIM object model.
+- `--engine fast-step` — STEP-based scan + direct JSON emission path.
+
 Verbosity option:
 - `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console (includes accessor telemetry).
 - `--verbosity timing` (or `--verbosity time`) — print only elapsed execution time; accessor telemetry is disabled.
@@ -124,7 +138,7 @@ Published executable names:
 ## CLI contract
 
 ```bash
-ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
 
 
 ```
@@ -241,6 +255,12 @@ What script does automatically:
 - formats time and memory in comparison report by magnitude (`μs/ms/s`, `KB/MB/GB`);
 - for commit-to-commit comparison, keep `benchmarks/results/latest/*` committed after each run.
 
+Fast-step parity batch command (xbim vs fast-step contract check on multiple IFC files):
+
+```bash
+pwsh ./benchmarks/run-fast-step-parity.ps1 -IfcDirectory "ifc" -OutputReportPath "benchmarks/results/latest/fast-step-parity-report.md"
+```
+
 
 
 
@@ -267,6 +287,7 @@ What script does automatically:
 │   ├── IfcFilePipelineBenchmark.cs
 │   ├── IfcFilePipelineDetailedBenchmark.cs
 │   ├── run-baseline.ps1
+│   ├── run-fast-step-parity.ps1
 │   ├── results/
 │   │   ├── latest/
 │   │   └── previous/

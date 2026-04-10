@@ -17,6 +17,7 @@ internal static class Program
                 out var preserveOrder,
                 out var outputBufferSize,
                 out var writeThrough,
+                out var engine,
                 out var verbosity,
                 out var progressMode))
         {
@@ -42,10 +43,11 @@ internal static class Program
             IfcAccessors.SetTelemetryEnabled(verbosity is Verbosity.Detailed);
             IfcAccessors.ResetTelemetry();
 
-            var exportReport = IfcStreamingJsonExporter.Export(
+            var exportReport = IfcEngineRouter.Export(
                 ifcSourceFile,
                 jsonTargetFile,
                 preserveOrder,
+                engine,
                 outputBufferSize,
                 writeThrough,
                 progressReporter);
@@ -70,6 +72,7 @@ internal static class Program
                             preserveOrder,
                             outputBufferSize,
                             writeThrough,
+                            engine,
                             exportReport,
                             telemetrySnapshot,
                             stopwatch.Elapsed,
@@ -99,6 +102,7 @@ internal static class Program
         out bool preserveOrder,
         out int outputBufferSize,
         out bool writeThrough,
+        out IfcExportEngine engine,
         out Verbosity verbosity,
         out ProgressMode progressMode)
     {
@@ -107,6 +111,7 @@ internal static class Program
         preserveOrder = true;
         outputBufferSize = IfcStreamingJsonExporter.DefaultOutputFileBufferSize;
         writeThrough = false;
+        engine = IfcExportEngine.Xbim;
         verbosity = Verbosity.None;
         progressMode = ProgressMode.Completed;
 
@@ -129,6 +134,17 @@ internal static class Program
 
                 case "--no-preserve-order":
                     preserveOrder = false;
+                    break;
+
+                case "--engine":
+                    if (i + 1 >= args.Length
+                        || args[i + 1].StartsWith("--", StringComparison.Ordinal)
+                        || !IfcExportEngineParser.TryParse(args[i + 1], out engine))
+                    {
+                        return false;
+                    }
+
+                    i++;
                     break;
 
                 case "--verbosity":
@@ -292,6 +308,7 @@ internal static class Program
         bool preserveOrder,
         int outputBufferSize,
         bool writeThrough,
+        IfcExportEngine engine,
         IfcExportReport exportReport,
         IfcAccessorTelemetrySnapshot telemetry,
         TimeSpan elapsed,
@@ -308,6 +325,7 @@ internal static class Program
         Console.WriteLine($"PreserveOrder: {preserveOrder}");
         Console.WriteLine($"Output buffer: {FormatBytes(outputBufferSize)} ({outputBufferSize} bytes)");
         Console.WriteLine($"WriteThrough: {writeThrough}");
+        Console.WriteLine($"Engine: {engine}");
         Console.WriteLine($"Schema: {exportReport.SchemaVersion}");
         Console.WriteLine($"MetaObjects: {exportReport.MetaObjectCount}");
         Console.WriteLine($"Output size: {FormatBytes(targetFileSize)}");
@@ -377,10 +395,11 @@ internal static class Program
         Console.WriteLine("Please specify the path to the IFC and optional output json.");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [/path_to_file.json] [--preserve-order true|false]");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc --no-preserve-order");
-        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
+        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
         Console.WriteLine("Default: preserve order is true.");
         Console.WriteLine($"Default output buffer: {IfcStreamingJsonExporter.DefaultOutputFileBufferSize / 1024} KB.");
         Console.WriteLine("Default write-through: disabled.");
+        Console.WriteLine("Default engine: xbim.");
         Console.WriteLine("Default verbosity: none.");
         Console.WriteLine("Default progress mode: completed.");
         Console.WriteLine("If output path is not passed, target defaults to source name with .json extension.");

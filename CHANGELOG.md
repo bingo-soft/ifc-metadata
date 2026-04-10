@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.17.0] - 2026-04-10 23:46
+
+### Summary
+- Added a new `fast-step` export engine with a STEP-based scan + direct JSON emission path routed from CLI.
+- Extended parity validation to compare `xbim` and `fast-step` outputs on real IFC files in both preserve-order modes.
+- Added a batch parity script that runs contract checks over multiple IFC files and writes a markdown report.
+
+### Added
+- Added fast-step modules:
+  - `src/FastStep/StepLexer.cs`
+  - `src/FastStep/StepParsingUtilities.cs`
+  - `src/FastStep/StepEntityScanner.cs`
+  - `src/FastStep/FastStepIndexes.cs`
+  - `src/FastStep/StepHeaderReader.cs`
+  - `src/FastStep/FastStepJsonEmitter.cs`
+  - `src/FastStep/FastStepTypeNameNormalizer.cs`
+- Added engine routing components:
+  - `src/IfcExportEngine.cs`
+  - `src/IfcEngineRouter.cs`
+  - `src/FastStepJsonExporter.cs`
+- Added tests:
+  - `tests/IfcExportEngineParserTests.cs`
+  - `tests/StepEntityScannerTests.cs`
+  - `tests/FastStepJsonEmitterTests.cs`
+  - `tests/FastStepParityTests.cs`
+- Added parity batch script: `benchmarks/run-fast-step-parity.ps1`.
+
+### Changed
+- Updated `src/Program.cs`:
+  - added `--engine xbim|fast-step` argument;
+  - switched export call to engine router;
+  - added selected engine to detailed execution report and usage/help output.
+- Updated `src/ifc-metadata.csproj` version fields to `1.17.0`.
+
+### Fixed
+- Fixed fast-step lexer recovery path by replacing recursive fallback with iterative scanning to prevent stack overflow on large IFC files.
+- Fixed header string parsing by decoding STEP escape sequences (including `\\X2\\...\\X0\\`), restoring parity for escaped Unicode values (e.g., `creatingApplication`).
+- Fixed fast-step header mapping for `creatingApplication` and preserved empty-string names instead of converting them to `null`.
+
 ## [1.16.0] - 2026-04-10 22:12
 
 ### Summary
