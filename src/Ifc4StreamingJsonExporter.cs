@@ -6,9 +6,9 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 
 using Xbim.Ifc;
+using Xbim.Ifc4.Interfaces;
 using Xbim.Ifc4.Kernel;
 using Xbim.Ifc4.ProductExtension;
-using Xbim.Ifc4.Interfaces;
 
 namespace Bingosoft.Net.IfcMetadata
 {
@@ -78,32 +78,19 @@ namespace Bingosoft.Net.IfcMetadata
         private static Dictionary<string, int> BuildObjectIdCounts(IfcObjectDefinition root, bool preserveOrder, List<TraversalNode> bufferedTraversal = null)
         {
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-
-            foreach (var node in EnumerateHierarchy(root, null, preserveOrder))
-            {
-                bufferedTraversal?.Add(node);
-
-                if (string.IsNullOrWhiteSpace(node.ObjectId))
-                {
-                    continue;
-                }
-
-                counts.TryGetValue(node.ObjectId, out var current);
-                counts[node.ObjectId] = current + 1;
-            }
-
-            return counts;
-        }
-
-        private static IEnumerable<TraversalNode> EnumerateHierarchy(IfcObjectDefinition root, string parentId, bool preserveOrder)
-        {
             var stack = new Stack<TraversalNode>();
-            stack.Push(new TraversalNode(root, parentId));
+            stack.Push(new TraversalNode(root, null));
 
             while (stack.Count > 0)
             {
                 var current = stack.Pop();
-                yield return current;
+                bufferedTraversal?.Add(current);
+
+                if (!string.IsNullOrWhiteSpace(current.ObjectId))
+                {
+                    counts.TryGetValue(current.ObjectId, out var currentCount);
+                    counts[current.ObjectId] = currentCount + 1;
+                }
 
                 PushRelatedObjects(stack, current.ObjectDefinition, current.ObjectId, preserveOrder);
 
@@ -112,6 +99,8 @@ namespace Bingosoft.Net.IfcMetadata
                     PushContainedElements(stack, spatialElement, current.ObjectId, preserveOrder);
                 }
             }
+
+            return counts;
         }
 
         private static void PushContainedElements(Stack<TraversalNode> stack, IfcSpatialStructureElement spatialElement, string parentObjectId, bool preserveOrder)
@@ -168,9 +157,9 @@ namespace Bingosoft.Net.IfcMetadata
                 {
                     foreach (var relatedObject in relation.RelatedObjects)
                     {
-                        if (relatedObject is IfcObjectDefinition child)
+                        if (relatedObject is not null)
                         {
-                            stack.Push(new TraversalNode(child, parentObjectId));
+                            stack.Push(new TraversalNode(relatedObject, parentObjectId));
                         }
                     }
                 }
@@ -186,9 +175,9 @@ namespace Bingosoft.Net.IfcMetadata
                 {
                     foreach (var relatedObject in relation.RelatedObjects)
                     {
-                        if (relatedObject is IfcObjectDefinition child)
+                        if (relatedObject is not null)
                         {
-                            AddPooledChild(ref pooledChildren, ref childCount, child);
+                            AddPooledChild(ref pooledChildren, ref childCount, relatedObject);
                         }
                     }
                 }
@@ -245,8 +234,9 @@ namespace Bingosoft.Net.IfcMetadata
 
             progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
-            foreach (var node in bufferedTraversal)
+            for (var i = 0; i < bufferedTraversal.Count; i++)
             {
+                var node = bufferedTraversal[i];
                 if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
                 {
                     continue;

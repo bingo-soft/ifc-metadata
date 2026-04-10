@@ -84,6 +84,11 @@ namespace Bingosoft.Net.IfcMetadata
         {
             return stringIndex < 0 ? null : strings[stringIndex];
         }
+
+        internal string ResolveRequired(int stringIndex)
+        {
+            return strings[stringIndex];
+        }
     }
 
     internal static class IfcExportIrPipeline
@@ -136,19 +141,26 @@ namespace Bingosoft.Net.IfcMetadata
 
         internal static void WriteMetaObjects(Utf8JsonWriter writer, IfcExportIr ir)
         {
-            foreach (var row in ir.Rows)
+            var rows = ir.Rows;
+            for (var i = 0; i < rows.Count; i++)
             {
-                var objectId = ir.ResolveNullable(row.IdIdx);
-                writer.WriteStartObject(objectId);
+                var row = rows[i];
+                var objectId = ir.ResolveRequired(row.IdIdx);
+                var name = ir.ResolveNullable(row.NameIdx);
+                var type = ir.ResolveRequired(row.TypeIdx);
+                var parent = ir.ResolveNullable(row.ParentIdIdx);
+                var materialId = ir.ResolveNullable(row.MaterialIdIdx);
+                var typeId = ir.ResolveNullable(row.TypeIdIdx);
 
+                writer.WriteStartObject(objectId);
                 writer.WriteString("id", objectId);
-                WriteNullableString(writer, "name", ir.ResolveNullable(row.NameIdx));
-                writer.WriteString("type", ir.ResolveNullable(row.TypeIdx));
-                WriteNullableString(writer, "parent", ir.ResolveNullable(row.ParentIdIdx));
+                WriteNullableString(writer, "name", name);
+                writer.WriteString("type", type);
+                WriteNullableString(writer, "parent", parent);
 
                 WriteProperties(writer, ir, row);
-                WriteNullableString(writer, "material_id", ir.ResolveNullable(row.MaterialIdIdx));
-                WriteNullableString(writer, "type_id", ir.ResolveNullable(row.TypeIdIdx));
+                WriteNullableString(writer, "material_id", materialId);
+                WriteNullableString(writer, "type_id", typeId);
 
                 writer.WriteEndObject();
             }
@@ -166,7 +178,7 @@ namespace Bingosoft.Net.IfcMetadata
             var endExclusive = row.PropertiesStart + row.PropertiesCount;
             for (var i = row.PropertiesStart; i < endExclusive; i++)
             {
-                writer.WriteStringValue(ir.ResolveNullable(ir.PropertyStringIndexes[i]));
+                writer.WriteStringValue(ir.ResolveRequired(ir.PropertyStringIndexes[i]));
             }
 
             writer.WriteEndArray();

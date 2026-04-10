@@ -22,7 +22,7 @@ namespace Bingosoft.Net.IfcMetadata
         private static readonly IComparer<IIfcObjectDefinition> GlobalIdComparer = Comparer<IIfcObjectDefinition>.Create(
             static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
 
-                internal static IfcExportReport Export(
+        internal static IfcExportReport Export(
             FileInfo ifcSourceFile,
             FileInfo jsonTargetFile,
             bool preserveOrder,
@@ -109,38 +109,25 @@ namespace Bingosoft.Net.IfcMetadata
                 Options = writeThrough ? FileOptions.WriteThrough : FileOptions.SequentialScan,
             };
 
-            return new FileStream(jsonTargetFile.FullName, options);
+                        return new FileStream(jsonTargetFile.FullName, options);
         }
 
         private static Dictionary<string, int> BuildObjectIdCounts(IIfcObjectDefinition root, bool preserveOrder, List<TraversalNode> bufferedTraversal = null)
         {
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-
-            foreach (var node in EnumerateHierarchy(root, null, preserveOrder))
-            {
-                bufferedTraversal?.Add(node);
-
-                if (string.IsNullOrWhiteSpace(node.ObjectId))
-                {
-                    continue;
-                }
-
-                counts.TryGetValue(node.ObjectId, out var current);
-                counts[node.ObjectId] = current + 1;
-            }
-
-            return counts;
-        }
-
-        private static IEnumerable<TraversalNode> EnumerateHierarchy(IIfcObjectDefinition root, string parentId, bool preserveOrder)
-        {
             var stack = new Stack<TraversalNode>();
-            stack.Push(new TraversalNode(root, parentId));
+            stack.Push(new TraversalNode(root, null));
 
             while (stack.Count > 0)
             {
                 var current = stack.Pop();
-                yield return current;
+                bufferedTraversal?.Add(current);
+
+                if (!string.IsNullOrWhiteSpace(current.ObjectId))
+                {
+                    counts.TryGetValue(current.ObjectId, out var currentCount);
+                    counts[current.ObjectId] = currentCount + 1;
+                }
 
                 PushRelatedObjects(stack, current.ObjectDefinition, current.ObjectId, preserveOrder);
 
@@ -149,6 +136,8 @@ namespace Bingosoft.Net.IfcMetadata
                     PushContainedElements(stack, spatialElement, current.ObjectId, preserveOrder);
                 }
             }
+
+                        return counts;
         }
 
         private static void PushContainedElements(Stack<TraversalNode> stack, IIfcSpatialStructureElement spatialElement, string parentObjectId, bool preserveOrder)
@@ -231,7 +220,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        private static void PushChildrenOrdered(Stack<TraversalNode> stack, IIfcObjectDefinition[] children, int childCount, string parentObjectId)
+                private static void PushChildrenOrdered(Stack<TraversalNode> stack, IIfcObjectDefinition[] children, int childCount, string parentObjectId)
         {
             if (childCount == 0)
             {
@@ -246,7 +235,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-                private static void AddPooledChild(ref IIfcObjectDefinition[] pooledChildren, ref int childCount, IIfcObjectDefinition child)
+        private static void AddPooledChild(ref IIfcObjectDefinition[] pooledChildren, ref int childCount, IIfcObjectDefinition child)
         {
             if (childCount == pooledChildren.Length)
             {
@@ -277,8 +266,9 @@ namespace Bingosoft.Net.IfcMetadata
 
             progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
-            foreach (var node in bufferedTraversal)
+            for (var i = 0; i < bufferedTraversal.Count; i++)
             {
+                var node = bufferedTraversal[i];
                 if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
                 {
                     continue;
@@ -298,7 +288,7 @@ namespace Bingosoft.Net.IfcMetadata
                 progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
             }
 
-            return ir;
+                        return ir;
         }
 
         private static string GetAuthor(IList<string> authors)
@@ -351,7 +341,7 @@ namespace Bingosoft.Net.IfcMetadata
         }
     }
 
-    internal readonly struct IfcExportReport
+        internal readonly struct IfcExportReport
     {
         internal IfcExportReport(string schemaVersion, int metaObjectCount)
         {
@@ -364,6 +354,7 @@ namespace Bingosoft.Net.IfcMetadata
         internal int MetaObjectCount { get; }
     }
 }
+
 
 
 

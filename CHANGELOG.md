@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.14.0] - 2026-04-10 18:12
+
+### Summary
+- Completed A2 hot-loop optimization for IR-based JSON writer and traversal counting paths.
+- Removed iterator-block traversal overhead in IFC2x3/IFC4/generic exporters by switching to direct stack loops.
+- Refreshed benchmark baseline snapshots; current run shows lower execution time while managed allocated size remains unchanged.
+
+### Changed
+- Updated `src/IfcExportIr.cs`:
+  - `WriteMetaObjects` now uses indexed loop over `MetaRow` rows and resolves required string fields once per row;
+  - added `ResolveRequired(int)` and used it for required fields/properties emission.
+- Updated `src/IfcStreamingJsonExporter.cs`, `src/Ifc4StreamingJsonExporter.cs`, and `src/Ifc2x3StreamingJsonExporter.cs`:
+  - replaced `EnumerateHierarchy(... yield return ...)` with direct stack traversal in `BuildObjectIdCounts`;
+  - switched IR build loop from `foreach` to indexed `for` to reduce hot-path enumerator overhead.
+- Updated benchmark artifacts:
+  - refreshed `benchmarks/results/latest/*` and rotated `benchmarks/results/previous/*`;
+  - added stamped reports `benchmarks/results/2026-04-10-180638-*`.
+
 ## [1.13.0] - 2026-04-10 16:50
 
 ### Summary
