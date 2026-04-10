@@ -32,9 +32,7 @@ internal static class FastStepJsonEmitter
         var counts = BuildObjectIdCounts(traversal);
         var uniqueMetaObjects = counts.Count;
 
-        var propertySetByObjectId = BuildPropertySetMap(indexes);
-        var materialByObjectId = BuildMaterialMap(indexes);
-        var typeByObjectId = BuildTypeMap(indexes);
+        var mappings = FastStepMappingCache.Build(indexes);
 
         using var stream = IfcStreamingExportUtilities.OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
         using var writer = new Utf8JsonWriter(stream, WriterOptions);
@@ -67,7 +65,7 @@ internal static class FastStepJsonEmitter
             }
 
             counts.Remove(node.ObjectId);
-            WriteMetaObject(writer, indexes, project, node, propertySetByObjectId, materialByObjectId, typeByObjectId);
+            WriteMetaObject(writer, indexes, mappings, project, node);
 
             processedMetaObjects++;
             progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
@@ -169,78 +167,12 @@ internal static class FastStepJsonEmitter
         return counts;
     }
 
-    private static Dictionary<int, List<string>> BuildPropertySetMap(FastStepIndexes indexes)
-    {
-        var map = new Dictionary<int, List<string>>();
-
-        foreach (var relation in indexes.DefinesByPropertiesRelations)
-        {
-            if (!indexes.PropertySetGlobalIds.TryGetValue(relation.RelatingId, out var psetId) || string.IsNullOrWhiteSpace(psetId))
-            {
-                continue;
-            }
-
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
-            {
-                var objectEntityId = relation.RelatedIds[i];
-                if (!map.TryGetValue(objectEntityId, out var psetList))
-                {
-                    psetList = [];
-                    map[objectEntityId] = psetList;
-                }
-
-                psetList.Add(psetId);
-            }
-        }
-
-        return map;
-    }
-
-    private static Dictionary<int, string> BuildMaterialMap(FastStepIndexes indexes)
-    {
-        var map = new Dictionary<int, string>();
-
-        foreach (var relation in indexes.AssociatesMaterialRelations)
-        {
-            var materialId = FormatRelatedReference(indexes, relation.RelatingId);
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
-            {
-                map[relation.RelatedIds[i]] = materialId;
-            }
-        }
-
-        return map;
-    }
-
-    private static Dictionary<int, string> BuildTypeMap(FastStepIndexes indexes)
-    {
-        var map = new Dictionary<int, string>();
-
-        foreach (var relation in indexes.DefinesByTypeRelations)
-        {
-            var typeId = GetGlobalId(indexes, relation.RelatingId);
-            if (string.IsNullOrWhiteSpace(typeId))
-            {
-                typeId = FormatRelatedReference(indexes, relation.RelatingId);
-            }
-
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
-            {
-                map[relation.RelatedIds[i]] = typeId;
-            }
-        }
-
-        return map;
-    }
-
     private static void WriteMetaObject(
         Utf8JsonWriter writer,
         FastStepIndexes indexes,
+        FastStepMappingCache mappings,
         FastStepProjectRecord project,
-        FastStepTraversalNode node,
-        Dictionary<int, List<string>> propertySetByObjectId,
-        Dictionary<int, string> materialByObjectId,
-        Dictionary<int, string> typeByObjectId)
+        FastStepTraversalNode node)
     {
         var objectId = node.ObjectId;
         writer.WritePropertyName(objectId);
@@ -248,14 +180,14 @@ internal static class FastStepJsonEmitter
 
         writer.WriteString("id", objectId);
         writer.WriteString("name", GetName(indexes, node.EntityId));
-        writer.WriteString("type", GetTypeName(indexes, node.EntityId));
+        writer.WriteString("type", mappings.GetTypeName(node.EntityId));
         writer.WriteString("parent", node.ParentObjectId);
 
         if (string.Equals(objectId, project.GlobalId, StringComparison.Ordinal))
         {
             writer.WriteNull("properties");
         }
-        else if (propertySetByObjectId.TryGetValue(node.EntityId, out var psetIds) && psetIds.Count > 0)
+        else if (mappings.PropertySetByObjectId.TryGetValue(node.EntityId, out var psetIds) && psetIds.Count > 0)
         {
             writer.WritePropertyName("properties");
             writer.WriteStartArray();
@@ -271,7 +203,7 @@ internal static class FastStepJsonEmitter
             writer.WriteNull("properties");
         }
 
-        if (materialByObjectId.TryGetValue(node.EntityId, out var materialId) && !string.IsNullOrWhiteSpace(materialId))
+        if (mappings.MaterialByObjectId.TryGetValue(node.EntityId, out var materialId) && !string.IsNullOrWhiteSpace(materialId))
         {
             writer.WriteString("material_id", materialId);
         }
@@ -280,7 +212,7 @@ internal static class FastStepJsonEmitter
             writer.WriteNull("material_id");
         }
 
-        if (typeByObjectId.TryGetValue(node.EntityId, out var typeId) && !string.IsNullOrWhiteSpace(typeId))
+        if (mappings.TypeByObjectId.TryGetValue(node.EntityId, out var typeId) && !string.IsNullOrWhiteSpace(typeId))
         {
             writer.WriteString("type_id", typeId);
         }
@@ -300,26 +232,6 @@ internal static class FastStepJsonEmitter
     private static string GetName(FastStepIndexes indexes, int entityId)
     {
         return indexes.EntityNames.GetValueOrDefault(entityId);
-    }
-
-    private static string GetTypeName(FastStepIndexes indexes, int entityId)
-    {
-        if (indexes.Entities.TryGetValue(entityId, out var entity))
-        {
-            return FastStepTypeNameNormalizer.Normalize(entity.EntityType);
-        }
-
-        return "Unknown";
-    }
-
-    private static string FormatRelatedReference(FastStepIndexes indexes, int relatedEntityId)
-    {
-        if (indexes.Entities.TryGetValue(relatedEntityId, out var entity))
-        {
-            return $"{FastStepTypeNameNormalizer.Normalize(entity.EntityType)}_{relatedEntityId}";
-        }
-
-        return $"#{relatedEntityId}";
     }
 
     private readonly record struct FastStepTraversalNode(int EntityId, string ObjectId, string ParentObjectId);

@@ -5,18 +5,20 @@ namespace Bingosoft.Net.IfcMetadata.FastStep;
 
 internal static class StepLexer
 {
-    internal static List<StepEntityToken> ReadEntities(TextReader reader)
+    internal static IEnumerable<StepEntityToken> EnumerateEntities(TextReader reader)
     {
         var text = reader.ReadToEnd();
-        var entities = new List<StepEntityToken>();
         var index = 0;
 
         while (TryReadNextEntity(text, ref index, out var entity))
         {
-            entities.Add(entity);
+            yield return entity;
         }
+    }
 
-        return entities;
+    internal static List<StepEntityToken> ReadEntities(TextReader reader)
+    {
+        return [.. EnumerateEntities(reader)];
     }
 
     private static bool TryReadNextEntity(string text, ref int index, out StepEntityToken entity)
@@ -133,10 +135,24 @@ internal static class StepLexer
                 ? text[argsStart..(argsStart + argsLength)]
                 : string.Empty;
 
-            entity = new StepEntityToken(entityId, entityType, rawArguments);
+            entity = new StepEntityToken(
+                entityId,
+                entityType,
+                rawArguments,
+                start,
+                index,
+                argsStart,
+                argsStart + argsLength);
             return true;
         }
     }
 }
 
-internal readonly record struct StepEntityToken(int EntityId, string EntityType, string RawArguments);
+internal readonly record struct StepEntityToken(
+    int EntityId,
+    string EntityType,
+    string RawArguments,
+    int StatementStartOffset,
+    int StatementEndOffset,
+    int ArgumentsStartOffset,
+    int ArgumentsEndOffset);

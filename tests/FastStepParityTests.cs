@@ -131,6 +131,34 @@ public sealed class FastStepParityTests
     }
 
     [Theory]
+    [InlineData("IFC2X2_FINAL", true)]
+    [InlineData("IFC2X2_FINAL", false)]
+    [InlineData("IFC2X3", true)]
+    [InlineData("IFC2X3", false)]
+    [InlineData("IFC4", true)]
+    [InlineData("IFC4", false)]
+    [InlineData("IFC4X3_ADD2", true)]
+    [InlineData("IFC4X3_ADD2", false)]
+    public void Xbim_And_FastStep_Engines_ProduceEquivalentOutput_ForIfcSchemaFixtures(string schema, bool preserveOrder)
+    {
+        var ifcContent = CreateIfcFixture(schema);
+        var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-metadata-{Guid.NewGuid():N}-{schema}.ifc");
+
+        try
+        {
+            File.WriteAllText(ifcPath, ifcContent);
+            AssertEquivalentEngineOutput(new FileInfo(ifcPath), preserveOrder);
+        }
+        finally
+        {
+            if (File.Exists(ifcPath))
+            {
+                File.Delete(ifcPath);
+            }
+        }
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public void Xbim_And_FastStep_Engines_ProduceEquivalentOutput_WhenIfcFileIsConfigured(bool preserveOrder)
@@ -140,6 +168,11 @@ public sealed class FastStepParityTests
             return;
         }
 
+        AssertEquivalentEngineOutput(ifcSourceFile, preserveOrder);
+    }
+
+    private static void AssertEquivalentEngineOutput(FileInfo ifcSourceFile, bool preserveOrder)
+    {
         var xbimTargetPath = Path.Combine(Path.GetTempPath(), $"ifc-metadata-{Guid.NewGuid():N}-xbim.json");
         var fastTargetPath = Path.Combine(Path.GetTempPath(), $"ifc-metadata-{Guid.NewGuid():N}-fast.json");
 
@@ -169,6 +202,22 @@ public sealed class FastStepParityTests
                 File.Delete(fastTargetPath);
             }
         }
+    }
+
+    private static string CreateIfcFixture(string schema)
+    {
+        return $"""
+        ISO-10303-21;
+        HEADER;
+        FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+        FILE_NAME('fixture.ifc','2024-01-01T00:00:00',('author'),('org'),'app','system','auth');
+        FILE_SCHEMA(('{schema}'));
+        ENDSEC;
+        DATA;
+        #10=IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
     }
 
     private static bool AreContractEquivalent(string leftJson, string rightJson)

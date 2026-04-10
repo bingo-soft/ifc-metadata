@@ -1,6 +1,37 @@
 # Changelog
 
+## [1.18.0] - 2026-04-11 00:37
+
+### Summary
+- Added fast-step engine execution diagnostics with explicit requested/effective engine reporting and fallback reason/counters in detailed CLI output.
+- Expanded fast-step routing support and parity coverage to include IFC4X3 and IFC2X2 schema families.
+- Implemented fast-step optimization layer updates: channel-based scan/index pipeline, string pool usage, and cached type/property/material mappings.
+
+### Added
+- Added `src/FastStep/FastStepMappingCache.cs` as dedicated cache layer for normalized type names and property/material/type mappings.
+- Added `tests/IfcEngineRouterTests.cs` to validate router fallback behavior and execution diagnostics.
+- Added `tests/StepHeaderReaderTests.cs` to validate schema normalization for IFC2X2 headers.
+- Added scanner tests for entity offset/range indexing and string pooling behavior in `tests/StepEntityScannerTests.cs`.
+
+### Changed
+- Updated `src/IfcEngineRouter.cs`:
+  - added fast-step execution diagnostics propagation into export report;
+  - added schema support for `IFC4X3*` and `IFC2X2*`;
+  - formalized fallback reasons (`SchemaReadFailed`, `UnsupportedSchema`, `FastStepFailed`).
+- Updated `src/IfcStreamingJsonExporter.cs` export report model with `IfcEngineExecutionDetails`.
+- Updated `src/Program.cs` detailed report output to print engine/fallback metrics.
+- Updated fast-step scanner/emitter internals:
+  - `src/FastStep/StepEntityScanner.cs` now uses channel-based producer/consumer flow;
+  - `src/FastStep/FastStepIndexes.cs` now includes string pool and entity statement/argument ranges;
+  - `src/FastStep/FastStepJsonEmitter.cs` now uses mapping cache instead of rebuilding maps ad hoc.
+- Updated parity tests in `tests/FastStepParityTests.cs` to include `IFC4X3_ADD2` and `IFC2X2_FINAL` fixtures.
+- Updated `README.md` engine/fallback and detailed-report documentation.
+
+### Fixed
+- Normalized `IFC2X2*` schema in fast-step header reader to align exported schema field parity with baseline behavior.
+
 ## [1.17.0] - 2026-04-10 23:46
+
 
 ### Summary
 - Added a new `fast-step` export engine with a STEP-based scan + direct JSON emission path routed from CLI.

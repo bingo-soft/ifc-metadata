@@ -37,10 +37,22 @@ internal static class StepHeaderReader
         var schemas = StepParsingUtilities.ParseStepStringList(fileSchemaArgs[0]);
         if (schemas.Count > 0)
         {
-            schema = schemas[0];
+            schema = NormalizeSchema(schemas[0]);
         }
 
         return new FastStepHeader(author, createdAt, schema, creatingApplication);
+    }
+
+    private static string NormalizeSchema(string schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema))
+        {
+            return schema;
+        }
+
+        return schema.StartsWith("IFC2X2", StringComparison.OrdinalIgnoreCase)
+            ? "IFC2X3"
+            : schema;
     }
 
     private static System.Collections.Generic.List<string> ReadHeaderArguments(string content, string headerFunctionName)

@@ -89,12 +89,79 @@ internal static class IfcStreamingJsonExporter
 internal readonly struct IfcExportReport
 {
     internal IfcExportReport(string schemaVersion, int metaObjectCount)
+        : this(schemaVersion, metaObjectCount, IfcEngineExecutionDetails.None)
+    {
+    }
+
+    internal IfcExportReport(string schemaVersion, int metaObjectCount, IfcEngineExecutionDetails executionDetails)
     {
         SchemaVersion = schemaVersion;
         MetaObjectCount = metaObjectCount;
+        ExecutionDetails = executionDetails;
     }
 
     internal string SchemaVersion { get; }
 
     internal int MetaObjectCount { get; }
+
+    internal IfcEngineExecutionDetails ExecutionDetails { get; }
+
+    internal IfcExportReport WithExecutionDetails(IfcEngineExecutionDetails executionDetails)
+    {
+        return new IfcExportReport(SchemaVersion, MetaObjectCount, executionDetails);
+    }
+}
+
+internal readonly struct IfcEngineExecutionDetails
+{
+    internal static readonly IfcEngineExecutionDetails None = new(
+        requestedEngine: IfcExportEngine.Xbim,
+        effectiveEngine: IfcExportEngine.Xbim,
+        fastStepRequestedCount: 0,
+        fastStepAttemptCount: 0,
+        fastStepSuccessCount: 0,
+        xbimRunCount: 0,
+        fallbackToXbimCount: 0,
+        fallbackReason: null,
+        fastStepSchema: null);
+
+    internal IfcEngineExecutionDetails(
+        IfcExportEngine requestedEngine,
+        IfcExportEngine effectiveEngine,
+        int fastStepRequestedCount,
+        int fastStepAttemptCount,
+        int fastStepSuccessCount,
+        int xbimRunCount,
+        int fallbackToXbimCount,
+        string fallbackReason,
+        string fastStepSchema)
+    {
+        RequestedEngine = requestedEngine;
+        EffectiveEngine = effectiveEngine;
+        FastStepRequestedCount = fastStepRequestedCount;
+        FastStepAttemptCount = fastStepAttemptCount;
+        FastStepSuccessCount = fastStepSuccessCount;
+        XbimRunCount = xbimRunCount;
+        FallbackToXbimCount = fallbackToXbimCount;
+        FallbackReason = fallbackReason;
+        FastStepSchema = fastStepSchema;
+    }
+
+    internal IfcExportEngine RequestedEngine { get; }
+
+    internal IfcExportEngine EffectiveEngine { get; }
+
+    internal int FastStepRequestedCount { get; }
+
+    internal int FastStepAttemptCount { get; }
+
+    internal int FastStepSuccessCount { get; }
+
+    internal int XbimRunCount { get; }
+
+    internal int FallbackToXbimCount { get; }
+
+    internal string FallbackReason { get; }
+
+    internal string FastStepSchema { get; }
 }

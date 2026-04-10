@@ -28,7 +28,9 @@ Single executable with engine routing and core functional blocks:
 
 
 2. `IfcEngineRouter` + engines (`src/IfcEngineRouter.cs`, `src/IfcExportEngine.cs`)
-   - routes export flow to `xbim` or `fast-step` engine.
+   - routes export flow to `xbim` or `fast-step` engine;
+   - for `--engine fast-step` uses fallback to `xbim` on schema read error / unsupported schema / fast-step runtime error.
+
 
 3. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
    - opens IFC model through `Xbim.Ifc.IfcStore`
@@ -100,9 +102,13 @@ Order option:
 Engine option:
 - `--engine xbim` (default) — existing exporter through xBIM object model.
 - `--engine fast-step` — STEP-based scan + direct JSON emission path.
+  - supported schema families for fast-step routing: `IFC2X2*`, `IFC2X3*`, `IFC4`, `IFC4X3*`;
+  - otherwise export falls back to `xbim`.
+
 
 Verbosity option:
-- `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console (includes accessor telemetry).
+- `--verbosity` (or `--verbosity detailed|summary`) — print post-run execution report to console (includes accessor telemetry and engine execution diagnostics: requested/effective engine, fast-step attempts/success, fallback count/reason, detected schema).
+
 - `--verbosity timing` (or `--verbosity time`) — print only elapsed execution time; accessor telemetry is disabled.
 - `--verbosity none` — disable report output.
 

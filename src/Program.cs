@@ -324,10 +324,20 @@ internal static class Program
         Console.WriteLine($"Target JSON: {jsonTargetFile.FullName}");
         Console.WriteLine($"PreserveOrder: {preserveOrder}");
         Console.WriteLine($"Output buffer: {FormatBytes(outputBufferSize)} ({outputBufferSize} bytes)");
-        Console.WriteLine($"WriteThrough: {writeThrough}");
-        Console.WriteLine($"Engine: {engine}");
+                Console.WriteLine($"WriteThrough: {writeThrough}");
+
+        Console.WriteLine($"Requested engine: {engine}");
+        Console.WriteLine($"Effective engine: {exportReport.ExecutionDetails.EffectiveEngine}");
+        Console.WriteLine($"Fast-step requested count: {exportReport.ExecutionDetails.FastStepRequestedCount}");
+        Console.WriteLine($"Fast-step attempt count: {exportReport.ExecutionDetails.FastStepAttemptCount}");
+        Console.WriteLine($"Fast-step success count: {exportReport.ExecutionDetails.FastStepSuccessCount}");
+        Console.WriteLine($"xBIM run count: {exportReport.ExecutionDetails.XbimRunCount}");
+        Console.WriteLine($"Fallback-to-xBIM count: {exportReport.ExecutionDetails.FallbackToXbimCount}");
+        Console.WriteLine($"Fast-step detected schema: {exportReport.ExecutionDetails.FastStepSchema ?? "n/a"}");
+        Console.WriteLine($"Fallback reason: {exportReport.ExecutionDetails.FallbackReason ?? "n/a"}");
         Console.WriteLine($"Schema: {exportReport.SchemaVersion}");
         Console.WriteLine($"MetaObjects: {exportReport.MetaObjectCount}");
+
         Console.WriteLine($"Output size: {FormatBytes(targetFileSize)}");
         Console.WriteLine($"Elapsed: {elapsed.TotalMilliseconds.ToString("N2", CultureInfo.InvariantCulture)} ms");
         Console.WriteLine($"Managed memory delta: {FormatSignedBytes(managedMemoryDeltaBytes)}");

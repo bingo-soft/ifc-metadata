@@ -58,6 +58,46 @@ public sealed class StepEntityScannerTests
     }
 
     [Fact]
+    public void Scan_IndexesEntityOffsets_AndArgumentRanges()
+    {
+        const string step = "prefix #10=IFCPROJECT('guid',$,'Project Name',$,$,$,$,$,$); suffix";
+
+        using var reader = new StringReader(step);
+        var indexes = StepEntityScanner.Scan(reader);
+
+        var range = indexes.EntityRanges[10];
+        var statementStart = step.IndexOf("#10=IFCPROJECT", System.StringComparison.Ordinal);
+        var statementEnd = step.IndexOf(';', statementStart) + 1;
+        var argsStart = step.IndexOf('(', statementStart) + 1;
+        var argsEnd = argsStart + indexes.Entities[10].RawArguments.Length;
+
+        Assert.Equal(statementStart, range.StatementStartOffset);
+        Assert.Equal(statementEnd, range.StatementEndOffset);
+        Assert.Equal(argsStart, range.ArgumentsStartOffset);
+        Assert.Equal(argsEnd, range.ArgumentsEndOffset);
+
+        var argsSlice = step[range.ArgumentsStartOffset..range.ArgumentsEndOffset];
+        Assert.Equal(indexes.Entities[10].RawArguments, argsSlice);
+    }
+
+    [Fact]
+    public void Scan_PoolsRepeatedStrings()
+    {
+        const string step = """
+        #10=IFCPROJECT('project-guid',$,'Shared Name',$,$,$,$,$,$);
+        #11=IFCSITE('site-guid',$,'Shared Name',$,$,$,$,$,$,$,$,$,$,$);
+        #12=IFCWALL('wall-1',$,'Wall A',$,$,$,$,$);
+        #13=IFCWALL('wall-2',$,'Wall B',$,$,$,$,$);
+        """;
+
+        using var reader = new StringReader(step);
+        var indexes = StepEntityScanner.Scan(reader);
+
+        Assert.True(object.ReferenceEquals(indexes.EntityNames[10], indexes.EntityNames[11]));
+        Assert.True(object.ReferenceEquals(indexes.Entities[12].EntityType, indexes.Entities[13].EntityType));
+    }
+
+    [Fact]
     public void Scan_HandlesEscapedQuotes_InStepStrings()
     {
         const string step = "#10=IFCPROJECT('guid',$,'Project ''A''',$,$,$,$,$,$);";
