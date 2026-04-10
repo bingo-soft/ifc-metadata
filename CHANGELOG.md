@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.12.0] - 2026-04-10 12:13
+
+### Summary
+- Added CLI progress output mode control (`completed` / `remaining`) with integer percentage updates during streaming export.
+- Updated executable artifact naming for publish outputs to `ifc-metadata-v2`.
+- Documented production self-contained publish profile settings for `win-x64` and `linux-x64` with TieredPGO + ReadyToRun (+ composite enabled).
+
+### Changed
+- Updated `src/Program.cs`:
+  - added argument parsing for `--progress [completed|remaining]`;
+  - added progress reporter wiring for export lifecycle and usage/help text updates.
+- Updated `src/IfcStreamingJsonExporter.cs`:
+  - extended `Export(...)` signature with optional `Action<int,int>` progress callback;
+  - added progress callback notifications for initial and per-metaobject states.
+- Updated `src/ifc-metadata.csproj`:
+  - set `<AssemblyName>ifc-metadata-v2</AssemblyName>`;
+  - bumped version fields to `1.12.0`.
+- Updated `README.md`:
+  - documented `--progress` CLI option;
+  - documented production self-contained publish command set and output executable names.
+
 ## [1.11.0] - 2026-04-10 00:39
 
 ### Summary

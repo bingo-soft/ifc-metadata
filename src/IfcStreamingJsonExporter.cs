@@ -27,7 +27,8 @@ namespace Bingosoft.Net.IfcMetadata
             FileInfo jsonTargetFile,
             bool preserveOrder,
             int outputFileBufferSize = DefaultOutputFileBufferSize,
-            bool writeThrough = false)
+            bool writeThrough = false,
+            Action<int, int> progressReporter = null)
         {
             using var model = IfcStore.Open(ifcSourceFile.FullName);
             var project = model.Instances.FirstOrDefault<IIfcProject>()
@@ -37,19 +38,21 @@ namespace Bingosoft.Net.IfcMetadata
             var bufferedTraversal = new List<TraversalNode>();
             var counts = BuildObjectIdCounts(project, preserveOrder, bufferedTraversal);
             var uniqueMetaObjects = counts.Count;
+            var processedMetaObjects = 0;
 
             using var stream = OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
             using var writer = new Utf8JsonWriter(stream, WriterOptions);
 
-                        writer.WriteStartObject();
+            writer.WriteStartObject();
             writer.WriteString("id", project.Name);
             writer.WriteString("projectId", project.GlobalId.ToString());
             writer.WriteString("author", GetAuthor(model.Header.FileName.AuthorName));
             writer.WriteString("createdAt", model.Header.TimeStamp);
-
             writer.WriteString("schema", schemaVersion);
             writer.WriteString("creatingApplication", model.Header.CreatingApplication);
             writer.WriteStartObject("metaObjects");
+
+            progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
             foreach (var node in bufferedTraversal)
             {
@@ -67,6 +70,8 @@ namespace Bingosoft.Net.IfcMetadata
 
                 counts.Remove(node.ObjectId);
                 WriteMetaObject(writer, node.ObjectDefinition, node.ParentId, node.ObjectId);
+                processedMetaObjects++;
+                progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
             }
 
             writer.WriteEndObject();
@@ -308,7 +313,7 @@ namespace Bingosoft.Net.IfcMetadata
             }
         }
 
-        private static string GetAuthor(IList<string> authors)
+                private static string GetAuthor(IList<string> authors)
         {
             if (authors.Count == 0)
             {
@@ -371,6 +376,14 @@ namespace Bingosoft.Net.IfcMetadata
         internal int MetaObjectCount { get; }
     }
 }
+
+
+
+
+
+
+
+
 
 
 

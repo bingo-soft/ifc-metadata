@@ -17,7 +17,8 @@ internal static class Program
                 out var preserveOrder,
                 out var outputBufferSize,
                 out var writeThrough,
-                out var verbosity))
+                out var verbosity,
+                out var progressMode))
         {
             PrintUsage();
             Environment.Exit(1);
@@ -34,17 +35,23 @@ internal static class Program
             var process = Process.GetCurrentProcess();
             var managedMemoryBefore = GC.GetTotalMemory(forceFullCollection: false);
             var stopwatch = Stopwatch.StartNew();
+            var progressReporter = CreateProgressReporter(progressMode);
 
             IfcAccessors.SetTelemetryEnabled(verbosity is not Verbosity.None);
             IfcAccessors.ResetTelemetry();
 
             var exportReport = IfcStreamingJsonExporter.Export(
                 ifcSourceFile,
-
                 jsonTargetFile,
                 preserveOrder,
                 outputBufferSize,
-                writeThrough);
+                writeThrough,
+                progressReporter);
+
+            if (progressReporter is not null)
+            {
+                Console.WriteLine();
+            }
 
             stopwatch.Stop();
             var managedMemoryAfter = GC.GetTotalMemory(forceFullCollection: false);
@@ -82,7 +89,8 @@ internal static class Program
         out bool preserveOrder,
         out int outputBufferSize,
         out bool writeThrough,
-        out Verbosity verbosity)
+        out Verbosity verbosity,
+        out ProgressMode progressMode)
     {
         ifcSourceFile = null;
         jsonTargetFile = null;
@@ -90,6 +98,7 @@ internal static class Program
         outputBufferSize = IfcStreamingJsonExporter.DefaultOutputFileBufferSize;
         writeThrough = false;
         verbosity = Verbosity.None;
+        progressMode = ProgressMode.Completed;
 
         string sourcePath = null;
         string targetPath = null;
@@ -120,6 +129,21 @@ internal static class Program
                     }
 
                     if (!TryParseVerbosity(args[i + 1], out verbosity))
+                    {
+                        return false;
+                    }
+
+                    i++;
+                    break;
+
+                case "--progress":
+                    if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                    {
+                        progressMode = ProgressMode.Completed;
+                        break;
+                    }
+
+                    if (!TryParseProgressMode(args[i + 1], out progressMode))
                     {
                         return false;
                     }
@@ -201,6 +225,51 @@ internal static class Program
                 verbosity = Verbosity.None;
                 return false;
         }
+    }
+
+    private static bool TryParseProgressMode(string value, out ProgressMode progressMode)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "completed":
+                progressMode = ProgressMode.Completed;
+                return true;
+            case "remaining":
+                progressMode = ProgressMode.Remaining;
+                return true;
+            default:
+                progressMode = ProgressMode.Completed;
+                return false;
+        }
+    }
+
+    private static Action<int, int> CreateProgressReporter(ProgressMode progressMode)
+    {
+        var lastPercent = int.MinValue;
+
+        return (processed, total) =>
+        {
+            if (total <= 0)
+            {
+                return;
+            }
+
+            var completedPercent = (processed * 100) / total;
+            var displayPercent = progressMode switch
+            {
+                ProgressMode.Completed => completedPercent,
+                ProgressMode.Remaining => 100 - completedPercent,
+                _ => completedPercent,
+            };
+
+            if (displayPercent == lastPercent)
+            {
+                return;
+            }
+
+            lastPercent = displayPercent;
+            Console.Write($"\r{displayPercent}");
+        };
     }
 
     private static void PrintExecutionReport(
@@ -289,11 +358,12 @@ internal static class Program
         Console.WriteLine("Please specify the path to the IFC and optional output json.");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [/path_to_file.json] [--preserve-order true|false]");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc --no-preserve-order");
-        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|none]] [--output-buffer-kb N] [--write-through|--no-write-through]");
+        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--verbosity [summary|detailed|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
         Console.WriteLine("Default: preserve order is true.");
         Console.WriteLine($"Default output buffer: {IfcStreamingJsonExporter.DefaultOutputFileBufferSize / 1024} KB.");
         Console.WriteLine("Default write-through: disabled.");
         Console.WriteLine("Default verbosity: none.");
+        Console.WriteLine("Default progress mode: completed.");
         Console.WriteLine("If output path is not passed, target defaults to source name with .json extension.");
     }
 
@@ -301,5 +371,11 @@ internal static class Program
     {
         None,
         Detailed,
+    }
+
+    private enum ProgressMode
+    {
+        Completed,
+        Remaining,
     }
 }
