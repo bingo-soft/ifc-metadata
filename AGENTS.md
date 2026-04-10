@@ -46,6 +46,8 @@
 ## Commit policy
 - Формат: `<type>: <short summary>`
 - Пример: `feat: add memory/performance profiling for large IFC`
+- В commit включать все изменения, которые не попадают под `gitignore`.
+
 
 ## Validation before commit
 - Не запускать сборку/тесты (если есть).
