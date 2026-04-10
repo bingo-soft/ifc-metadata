@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.15.0] - 2026-04-10 20:05
+
+### Summary
+- Unified IFC2x3/IFC4/fallback streaming export flow through a shared pipeline utility.
+- Reduced exporter duplication by moving traversal, IR build, and JSON root writing into common code.
+- Kept schema routing intact while simplifying schema-specific exporters to thin wrappers.
+
+### Added
+- Added `src/IfcStreamingExportUtilities.cs` with shared export entrypoint `ExportWithSharedPipeline(...)` and common traversal/IR helper logic.
+
+### Changed
+- Updated `src/IfcStreamingJsonExporter.cs` to delegate fallback export writing to shared pipeline utility.
+- Updated `src/Ifc2x3StreamingJsonExporter.cs` and `src/Ifc4StreamingJsonExporter.cs` to call shared pipeline instead of duplicating traversal/serialization flow.
+- Updated traversal child push logic in shared utility to skip `null` related objects/elements consistently.
+
 ## [1.14.0] - 2026-04-10 18:12
 
 ### Summary
