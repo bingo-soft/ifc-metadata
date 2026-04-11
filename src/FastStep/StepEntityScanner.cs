@@ -23,6 +23,8 @@ internal static class StepEntityScanner
         var indexes = new FastStepIndexes();
         var scanDiagnostics = options.CaptureDiagnostics ? new FastStepScanDiagnostics() : null;
 
+        var relationEdges = new FastStepRelationEdgeBuffers();
+
         var entitiesChannel = Channel.CreateBounded<StepEntityToken>(new BoundedChannelOptions(1024)
         {
             SingleReader = true,
@@ -54,7 +56,7 @@ internal static class StepEntityScanner
 
             await foreach (var entity in entitiesChannel.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                IndexEntity(indexes, entity, scanDiagnostics, normalizedByRawType);
+                IndexEntity(indexes, relationEdges, entity, scanDiagnostics, normalizedByRawType);
             }
         });
 
@@ -67,7 +69,13 @@ internal static class StepEntityScanner
             throw ex.InnerExceptions[0];
         }
 
-        indexes.BuildRelationAdjacency();
+        indexes.BuildRelationAdjacency(
+            relationEdges.Decomposition,
+            relationEdges.Containment,
+            relationEdges.DefinesByProperties,
+            relationEdges.AssociatesMaterial,
+            relationEdges.DefinesByType);
+
         diagnostics = scanDiagnostics;
         return indexes;
     }
@@ -98,6 +106,7 @@ internal static class StepEntityScanner
 
     private static void IndexEntity(
         FastStepIndexes indexes,
+        FastStepRelationEdgeBuffers relationEdges,
         StepEntityToken entity,
         FastStepScanDiagnostics diagnostics,
         Dictionary<string, string> normalizedByRawType)
@@ -119,7 +128,7 @@ internal static class StepEntityScanner
         }
 
         IndexEntityIdentity(indexes, entity.EntityId, entity.RawArguments);
-        IndexKnownEntity(indexes, entity.EntityId, pooledEntityType, entity.RawArguments);
+        IndexKnownEntity(indexes, relationEdges, entity.EntityId, pooledEntityType, entity.RawArguments);
     }
 
     private static string GetNormalizedType(
@@ -137,7 +146,12 @@ internal static class StepEntityScanner
         return normalizedType;
     }
 
-    private static void IndexKnownEntity(FastStepIndexes indexes, int entityId, string entityType, string rawArguments)
+    private static void IndexKnownEntity(
+        FastStepIndexes indexes,
+        FastStepRelationEdgeBuffers relationEdges,
+        int entityId,
+        string entityType,
+        string rawArguments)
     {
         switch (entityType.ToUpperInvariant())
         {
@@ -145,19 +159,19 @@ internal static class StepEntityScanner
                 IndexProject(indexes, entityId, rawArguments);
                 break;
             case "IFCRELAGGREGATES":
-                IndexRelation(indexes.DecompositionRelations, entityId, rawArguments, relatingArgIndex: 4, relatedArgIndex: 5);
+                IndexSingleToListEdges(relationEdges.Decomposition, rawArguments, parentArgIndex: 4, childrenArgIndex: 5);
                 break;
             case "IFCRELCONTAINEDINSPATIALSTRUCTURE":
-                IndexRelation(indexes.ContainmentRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexSingleToListEdges(relationEdges.Containment, rawArguments, parentArgIndex: 5, childrenArgIndex: 4);
                 break;
             case "IFCRELDEFINESBYPROPERTIES":
-                IndexRelation(indexes.DefinesByPropertiesRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexListToSingleEdges(relationEdges.DefinesByProperties, rawArguments, parentsArgIndex: 4, childArgIndex: 5);
                 break;
             case "IFCRELASSOCIATESMATERIAL":
-                IndexRelation(indexes.AssociatesMaterialRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexListToSingleEdges(relationEdges.AssociatesMaterial, rawArguments, parentsArgIndex: 4, childArgIndex: 5);
                 break;
             case "IFCRELDEFINESBYTYPE":
-                IndexRelation(indexes.DefinesByTypeRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexListToSingleEdges(relationEdges.DefinesByType, rawArguments, parentsArgIndex: 4, childArgIndex: 5);
                 break;
             case "IFCPROPERTYSET":
                 IndexPropertySet(indexes, entityId, rawArguments);
@@ -206,33 +220,48 @@ internal static class StepEntityScanner
         indexes.PropertySetGlobalIds[entityId] = indexes.StringPool.Intern(globalId);
     }
 
-    private static void IndexRelation(
-        List<FastStepRelationRecord> target,
-        int relationId,
-        string rawArguments,
-        int relatingArgIndex,
-        int relatedArgIndex)
+    private static void IndexSingleToListEdges(List<FastStepRelationEdge> target, string rawArguments, int parentArgIndex, int childrenArgIndex)
     {
         var rawArgumentsSpan = rawArguments.AsSpan();
-        if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, relatingArgIndex, out var relatingStart, out var relatingLength)
-            || !StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, relatedArgIndex, out var relatedStart, out var relatedLength))
+        if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, parentArgIndex, out var parentStart, out var parentLength)
+            || !StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, childrenArgIndex, out var childrenStart, out var childrenLength))
         {
             return;
         }
 
-        var relatingId = StepParsingUtilities.ParseStepReference(rawArgumentsSpan.Slice(relatingStart, relatingLength));
-        if (relatingId is null)
+        var parentId = StepParsingUtilities.ParseStepReference(rawArgumentsSpan.Slice(parentStart, parentLength));
+        if (parentId is null)
         {
             return;
         }
 
-        var relatedIds = StepParsingUtilities.ParseStepReferenceList(rawArgumentsSpan.Slice(relatedStart, relatedLength));
-        if (relatedIds.Count == 0)
+        var childIds = StepParsingUtilities.ParseStepReferenceList(rawArgumentsSpan.Slice(childrenStart, childrenLength));
+        for (var i = 0; i < childIds.Count; i++)
+        {
+            target.Add(new FastStepRelationEdge(parentId.Value, childIds[i]));
+        }
+    }
+
+    private static void IndexListToSingleEdges(List<FastStepRelationEdge> target, string rawArguments, int parentsArgIndex, int childArgIndex)
+    {
+        var rawArgumentsSpan = rawArguments.AsSpan();
+        if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, parentsArgIndex, out var parentsStart, out var parentsLength)
+            || !StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, childArgIndex, out var childStart, out var childLength))
         {
             return;
         }
 
-        target.Add(new FastStepRelationRecord(relationId, relatingId.Value, relatedIds));
+        var childId = StepParsingUtilities.ParseStepReference(rawArgumentsSpan.Slice(childStart, childLength));
+        if (childId is null)
+        {
+            return;
+        }
+
+        var parentIds = StepParsingUtilities.ParseStepReferenceList(rawArgumentsSpan.Slice(parentsStart, parentsLength));
+        for (var i = 0; i < parentIds.Count; i++)
+        {
+            target.Add(new FastStepRelationEdge(parentIds[i], childId.Value));
+        }
     }
 
     private static void IndexEntityIdentity(FastStepIndexes indexes, int entityId, string rawArguments)
@@ -259,5 +288,19 @@ internal static class StepEntityScanner
     }
 }
 
+internal sealed class FastStepRelationEdgeBuffers
+{
+    internal List<FastStepRelationEdge> Decomposition { get; } = [];
+
+    internal List<FastStepRelationEdge> Containment { get; } = [];
+
+    internal List<FastStepRelationEdge> DefinesByProperties { get; } = [];
+
+    internal List<FastStepRelationEdge> AssociatesMaterial { get; } = [];
+
+    internal List<FastStepRelationEdge> DefinesByType { get; } = [];
+}
+
 internal readonly record struct FastStepScanResult(FastStepIndexes Indexes, FastStepHeader Header, FastStepScanDiagnostics Diagnostics);
+
 

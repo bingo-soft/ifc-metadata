@@ -26,24 +26,19 @@ internal sealed class FastStepIndexes
 
     internal ReadOnlySpan<int> EntityIdsBySlot => _entityIdsBySlot.AsSpan(0, EntityCount);
 
-    internal List<FastStepRelationRecord> DecompositionRelations { get; } = [];
-
-    internal List<FastStepRelationRecord> ContainmentRelations { get; } = [];
-
-    internal List<FastStepRelationRecord> DefinesByPropertiesRelations { get; } = [];
-
-    internal List<FastStepRelationRecord> AssociatesMaterialRelations { get; } = [];
-
-    internal List<FastStepRelationRecord> DefinesByTypeRelations { get; } = [];
-
     internal Dictionary<int, string> PropertySetGlobalIds { get; } = new();
 
     internal FastStepAdjacency DecompositionAdjacency { get; private set; } = FastStepAdjacency.Empty;
 
     internal FastStepAdjacency ContainmentAdjacency { get; private set; } = FastStepAdjacency.Empty;
 
-    internal FastStepProjectRecord? Project { get; set; }
+    internal FastStepAdjacency DefinesByPropertiesAdjacency { get; private set; } = FastStepAdjacency.Empty;
 
+    internal FastStepAdjacency AssociatesMaterialAdjacency { get; private set; } = FastStepAdjacency.Empty;
+
+    internal FastStepAdjacency DefinesByTypeAdjacency { get; private set; } = FastStepAdjacency.Empty;
+
+    internal FastStepProjectRecord? Project { get; set; }
 
     internal int EnsureEntitySlot(int entityId)
     {
@@ -71,6 +66,13 @@ internal sealed class FastStepIndexes
         EntityIdToSlot[entityId] = slot;
         EntityCount++;
         return slot;
+    }
+
+    internal int GetEntityIdBySlot(int slot)
+    {
+        return slot >= 0 && slot < EntityCount
+            ? _entityIdsBySlot[slot]
+            : Missing;
     }
 
     internal void SetNormalizedType(int entityId, string normalizedType)
@@ -121,21 +123,6 @@ internal sealed class FastStepIndexes
         return TryGetStringByEntityId(entityId, _nameStringIndexesBySlot);
     }
 
-    internal string GetNormalizedTypeNameBySlot(int slot)
-    {
-        return TryGetStringBySlot(slot, _normalizedTypeStringIndexesBySlot);
-    }
-
-    internal string GetGlobalIdBySlot(int slot)
-    {
-        return TryGetStringBySlot(slot, _globalIdStringIndexesBySlot);
-    }
-
-    internal string GetNameBySlot(int slot)
-    {
-        return TryGetStringBySlot(slot, _nameStringIndexesBySlot);
-    }
-
     internal int GetSlotOrMissing(int entityId)
     {
         if (entityId < 0 || entityId >= EntityIdToSlot.Length)
@@ -146,12 +133,19 @@ internal sealed class FastStepIndexes
         return EntityIdToSlot[entityId];
     }
 
-    internal void BuildRelationAdjacency()
+    internal void BuildRelationAdjacency(
+        IReadOnlyList<FastStepRelationEdge> decompositionEdges,
+        IReadOnlyList<FastStepRelationEdge> containmentEdges,
+        IReadOnlyList<FastStepRelationEdge> definesByPropertiesEdges,
+        IReadOnlyList<FastStepRelationEdge> associatesMaterialEdges,
+        IReadOnlyList<FastStepRelationEdge> definesByTypeEdges)
     {
-        DecompositionAdjacency = FastStepAdjacency.Build(this, DecompositionRelations);
-        ContainmentAdjacency = FastStepAdjacency.Build(this, ContainmentRelations);
+        DecompositionAdjacency = FastStepAdjacency.Build(this, decompositionEdges);
+        ContainmentAdjacency = FastStepAdjacency.Build(this, containmentEdges);
+        DefinesByPropertiesAdjacency = FastStepAdjacency.Build(this, definesByPropertiesEdges);
+        AssociatesMaterialAdjacency = FastStepAdjacency.Build(this, associatesMaterialEdges);
+        DefinesByTypeAdjacency = FastStepAdjacency.Build(this, definesByTypeEdges);
     }
-
 
     private string TryGetStringByEntityId(int entityId, int[] indexesBySlot)
     {
@@ -224,11 +218,13 @@ internal sealed class FastStepIndexes
     }
 }
 
+internal readonly record struct FastStepRelationEdge(int ParentEntityId, int ChildEntityId);
+
 internal readonly record struct FastStepAdjacency(int[] Offsets, int[] Edges)
 {
     internal static readonly FastStepAdjacency Empty = new([0], []);
 
-    internal static FastStepAdjacency Build(FastStepIndexes indexes, List<FastStepRelationRecord> relations)
+    internal static FastStepAdjacency Build(FastStepIndexes indexes, IReadOnlyList<FastStepRelationEdge> edges)
     {
         if (indexes.EntityCount == 0)
         {
@@ -237,23 +233,17 @@ internal readonly record struct FastStepAdjacency(int[] Offsets, int[] Edges)
 
         var offsets = new int[indexes.EntityCount + 1];
 
-        for (var relationIndex = 0; relationIndex < relations.Count; relationIndex++)
+        for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
         {
-            var relation = relations[relationIndex];
-            var parentSlot = indexes.GetSlotOrMissing(relation.RelatingId);
-            if (parentSlot < 0)
+            var edge = edges[edgeIndex];
+            var parentSlot = indexes.GetSlotOrMissing(edge.ParentEntityId);
+            var childSlot = indexes.GetSlotOrMissing(edge.ChildEntityId);
+            if (parentSlot < 0 || childSlot < 0)
             {
                 continue;
             }
 
-            for (var childIndex = 0; childIndex < relation.RelatedIds.Count; childIndex++)
-            {
-                var childEntityId = relation.RelatedIds[childIndex];
-                if (indexes.GetSlotOrMissing(childEntityId) >= 0)
-                {
-                    offsets[parentSlot + 1]++;
-                }
-            }
+            offsets[parentSlot + 1]++;
         }
 
         for (var slot = 0; slot < indexes.EntityCount; slot++)
@@ -261,38 +251,29 @@ internal readonly record struct FastStepAdjacency(int[] Offsets, int[] Edges)
             offsets[slot + 1] += offsets[slot];
         }
 
-        var edges = new int[offsets[^1]];
+        var adjacencyEdges = new int[offsets[^1]];
         var cursors = new int[offsets.Length];
         Array.Copy(offsets, cursors, offsets.Length);
 
-        for (var relationIndex = 0; relationIndex < relations.Count; relationIndex++)
+        for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
         {
-            var relation = relations[relationIndex];
-            var parentSlot = indexes.GetSlotOrMissing(relation.RelatingId);
-            if (parentSlot < 0)
+            var edge = edges[edgeIndex];
+            var parentSlot = indexes.GetSlotOrMissing(edge.ParentEntityId);
+            var childSlot = indexes.GetSlotOrMissing(edge.ChildEntityId);
+            if (parentSlot < 0 || childSlot < 0)
             {
                 continue;
             }
 
-            for (var childIndex = 0; childIndex < relation.RelatedIds.Count; childIndex++)
-            {
-                var childSlot = indexes.GetSlotOrMissing(relation.RelatedIds[childIndex]);
-                if (childSlot < 0)
-                {
-                    continue;
-                }
-
-                var cursor = cursors[parentSlot]++;
-                edges[cursor] = childSlot;
-            }
+            var cursor = cursors[parentSlot]++;
+            adjacencyEdges[cursor] = childSlot;
         }
 
-        return new FastStepAdjacency(offsets, edges);
+        return new FastStepAdjacency(offsets, adjacencyEdges);
     }
 }
 
 internal sealed class FastStepScanDiagnostics
-
 {
     internal Dictionary<int, FastStepEntityRange> EntityRanges { get; } = new();
 
@@ -309,8 +290,6 @@ internal readonly record struct FastStepScanOptions(bool CaptureDiagnostics)
 {
     internal static readonly FastStepScanOptions Default = new(CaptureDiagnostics: false);
 }
-
-internal readonly record struct FastStepRelationRecord(int RelationId, int RelatingId, IReadOnlyList<int> RelatedIds);
 
 internal readonly record struct FastStepProjectRecord(int EntityId, string GlobalId, string Name);
 
@@ -349,4 +328,5 @@ internal sealed class FastStepStringPool
             : null;
     }
 }
+
 

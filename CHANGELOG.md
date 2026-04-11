@@ -1,6 +1,24 @@
 # Changelog
 
+## [1.21.0] - 2026-04-11 18:52
+
+### Summary
+- Completed migration of fast-step relation storage from object lists to adjacency-only runtime structures.
+- Reworked scanner relation indexing to emit compact parent-child edge buffers and build all adjacency maps in one finalize step.
+- Updated mapping/test layers to consume relation data directly from adjacency (`offsets + edges`) with slot-to-entity resolution.
+
+### Changed
+- Updated `src/FastStep/FastStepIndexes.cs`:
+  - removed runtime `List<FastStepRelationRecord>` relation collections;
+  - added adjacency fields for decomposition, containment, defines-by-properties, associates-material, and defines-by-type;
+  - switched adjacency builder input to `FastStepRelationEdge` buffers.
+- Updated `src/FastStep/StepEntityScanner.cs` to collect relation edges by schema pattern (`single->list`, `list->single`) and finalize all adjacency maps through `BuildRelationAdjacency(...)`.
+- Updated `src/FastStep/FastStepMappingCache.cs` to build property/material/type maps from adjacency spans instead of relation records.
+- Updated `tests/StepEntityScannerTests.cs` to validate relation semantics via adjacency traversal helpers.
+- Updated project version to `1.21.0` in `src/ifc-metadata.csproj`.
+
 ## [1.20.0] - 2026-04-11 18:28
+
 
 ### Summary
 - Migrated fast-step entity indexing from dictionary-based storage to SoA arrays with slot addressing and string-table indexes.

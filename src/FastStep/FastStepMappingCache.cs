@@ -50,16 +50,21 @@ internal sealed class FastStepMappingCache
     {
         var map = new Dictionary<int, List<string>>();
 
-        foreach (var relation in indexes.DefinesByPropertiesRelations)
+        for (var objectSlot = 0; objectSlot < indexes.EntityCount; objectSlot++)
         {
-            if (!indexes.PropertySetGlobalIds.TryGetValue(relation.RelatingId, out var psetId) || string.IsNullOrWhiteSpace(psetId))
-            {
-                continue;
-            }
+            var objectEntityId = indexes.GetEntityIdBySlot(objectSlot);
+            var start = indexes.DefinesByPropertiesAdjacency.Offsets[objectSlot];
+            var end = indexes.DefinesByPropertiesAdjacency.Offsets[objectSlot + 1];
 
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
+            for (var edgeIndex = start; edgeIndex < end; edgeIndex++)
             {
-                var objectEntityId = relation.RelatedIds[i];
+                var propertySetSlot = indexes.DefinesByPropertiesAdjacency.Edges[edgeIndex];
+                var propertySetEntityId = indexes.GetEntityIdBySlot(propertySetSlot);
+                if (!indexes.PropertySetGlobalIds.TryGetValue(propertySetEntityId, out var psetId) || string.IsNullOrWhiteSpace(psetId))
+                {
+                    continue;
+                }
+
                 if (!map.TryGetValue(objectEntityId, out var psetList))
                 {
                     psetList = [];
@@ -77,12 +82,17 @@ internal sealed class FastStepMappingCache
     {
         var map = new Dictionary<int, string>();
 
-        foreach (var relation in indexes.AssociatesMaterialRelations)
+        for (var objectSlot = 0; objectSlot < indexes.EntityCount; objectSlot++)
         {
-            var materialId = FormatRelatedReference(indexes, relation.RelatingId);
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
+            var objectEntityId = indexes.GetEntityIdBySlot(objectSlot);
+            var start = indexes.AssociatesMaterialAdjacency.Offsets[objectSlot];
+            var end = indexes.AssociatesMaterialAdjacency.Offsets[objectSlot + 1];
+
+            for (var edgeIndex = start; edgeIndex < end; edgeIndex++)
             {
-                map[relation.RelatedIds[i]] = materialId;
+                var materialSlot = indexes.AssociatesMaterialAdjacency.Edges[edgeIndex];
+                var materialEntityId = indexes.GetEntityIdBySlot(materialSlot);
+                map[objectEntityId] = FormatRelatedReference(indexes, materialEntityId);
             }
         }
 
@@ -93,17 +103,24 @@ internal sealed class FastStepMappingCache
     {
         var map = new Dictionary<int, string>();
 
-        foreach (var relation in indexes.DefinesByTypeRelations)
+        for (var objectSlot = 0; objectSlot < indexes.EntityCount; objectSlot++)
         {
-            var typeId = indexes.GetGlobalId(relation.RelatingId);
-            if (string.IsNullOrWhiteSpace(typeId))
-            {
-                typeId = FormatRelatedReference(indexes, relation.RelatingId);
-            }
+            var objectEntityId = indexes.GetEntityIdBySlot(objectSlot);
+            var start = indexes.DefinesByTypeAdjacency.Offsets[objectSlot];
+            var end = indexes.DefinesByTypeAdjacency.Offsets[objectSlot + 1];
 
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
+            for (var edgeIndex = start; edgeIndex < end; edgeIndex++)
             {
-                map[relation.RelatedIds[i]] = typeId;
+                var typeSlot = indexes.DefinesByTypeAdjacency.Edges[edgeIndex];
+                var typeEntityId = indexes.GetEntityIdBySlot(typeSlot);
+
+                var typeId = indexes.GetGlobalId(typeEntityId);
+                if (string.IsNullOrWhiteSpace(typeId))
+                {
+                    typeId = FormatRelatedReference(indexes, typeEntityId);
+                }
+
+                map[objectEntityId] = typeId;
             }
         }
 
@@ -117,3 +134,4 @@ internal sealed class FastStepMappingCache
         return indexes.StringPool.Intern(value);
     }
 }
+

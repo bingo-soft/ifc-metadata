@@ -8,6 +8,27 @@ namespace IfcMetadata.Tests;
 
 public sealed class StepEntityScannerTests
 {
+    private static int[] GetChildren(FastStepIndexes indexes, FastStepAdjacency adjacency, int parentEntityId)
+    {
+        var parentSlot = indexes.GetSlotOrMissing(parentEntityId);
+        if (parentSlot < 0)
+        {
+            return [];
+        }
+
+        var start = adjacency.Offsets[parentSlot];
+        var end = adjacency.Offsets[parentSlot + 1];
+        var children = new int[end - start];
+
+        for (var i = start; i < end; i++)
+        {
+            var childSlot = adjacency.Edges[i];
+            children[i - start] = indexes.GetEntityIdBySlot(childSlot);
+        }
+
+        return children;
+    }
+
     [Fact]
     public void Scan_IndexesKnownEntities_AndRelations()
     {
@@ -15,7 +36,12 @@ public sealed class StepEntityScannerTests
         ISO-10303-21;
         DATA;
         #10=IFCPROJECT('project-guid',$, 'Project Name',$,$,$,$,$,$);
+        #11=IFCSITE('site-guid',$,'Site',$,$,$,$,$,$,$,$,$,$,$);
+        #12=IFCBUILDING('building-guid',$,'Building',$,$,$,$,$,$,$,$,$);
+        #13=IFCBUILDINGSTOREY('storey-guid',$,'Storey',$,$,$,$,$,$,$);
         #20=IFCPROPERTYSET('pset-guid', $, 'Pset', $, ());
+        #200=IFCMATERIAL('Concrete',$,$);
+        #300=IFCWALLTYPE('wall-type-guid',$,'WallType',$,$,$,$,$,$,.NOTDEFINED.);
         #30=IFCRELAGGREGATES('rel-guid',$,$,$,#10,(#11,#12));
         #40=IFCRELCONTAINEDINSPATIALSTRUCTURE('rel2-guid',$,$,$,(#12,#13),#11);
         #50=IFCRELDEFINESBYPROPERTIES('rel3-guid',$,$,$,(#12),#20);
@@ -28,7 +54,7 @@ public sealed class StepEntityScannerTests
         using var reader = new StringReader(step);
         var indexes = StepEntityScanner.Scan(reader);
 
-        Assert.Equal(7, indexes.EntityCount);
+        Assert.Equal(12, indexes.EntityCount);
 
         Assert.True(indexes.Project.HasValue);
         Assert.Equal("project-guid", indexes.Project.Value.GlobalId);
@@ -36,29 +62,15 @@ public sealed class StepEntityScannerTests
 
         Assert.Equal("pset-guid", indexes.PropertySetGlobalIds[20]);
 
-        var aggregates = Assert.Single(indexes.DecompositionRelations);
-        Assert.Equal(10, aggregates.RelatingId);
-        Assert.Equal(new[] { 11, 12 }, aggregates.RelatedIds);
+        Assert.Equal(new[] { 11, 12 }, GetChildren(indexes, indexes.DecompositionAdjacency, 10));
+        Assert.Equal(new[] { 12, 13 }, GetChildren(indexes, indexes.ContainmentAdjacency, 11));
 
-        var containment = Assert.Single(indexes.ContainmentRelations);
-        Assert.Equal(11, containment.RelatingId);
-        Assert.Equal(new[] { 12, 13 }, containment.RelatedIds);
-
-        var definesByProperties = Assert.Single(indexes.DefinesByPropertiesRelations);
-        Assert.Equal(20, definesByProperties.RelatingId);
-        Assert.Equal(new[] { 12 }, definesByProperties.RelatedIds);
-
-        var associatesMaterial = Assert.Single(indexes.AssociatesMaterialRelations);
-        Assert.Equal(200, associatesMaterial.RelatingId);
-        Assert.Equal(new[] { 12 }, associatesMaterial.RelatedIds);
-
-                var definesByType = Assert.Single(indexes.DefinesByTypeRelations);
-        Assert.Equal(300, definesByType.RelatingId);
-        Assert.Equal(new[] { 12 }, definesByType.RelatedIds);
+        Assert.Equal(new[] { 20 }, GetChildren(indexes, indexes.DefinesByPropertiesAdjacency, 12));
+        Assert.Equal(new[] { 200 }, GetChildren(indexes, indexes.AssociatesMaterialAdjacency, 12));
+        Assert.Equal(new[] { 300 }, GetChildren(indexes, indexes.DefinesByTypeAdjacency, 12));
 
         Assert.Equal(indexes.EntityCount + 1, indexes.DecompositionAdjacency.Offsets.Length);
     }
-
 
     [Fact]
     public void Scan_IndexesEntityOffsets_AndArgumentRanges()
@@ -140,4 +152,5 @@ public sealed class StepEntityScannerTests
         Assert.Equal("Project 'A'", indexes.Project.Value.Name);
     }
 }
+
 
