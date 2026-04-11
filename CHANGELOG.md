@@ -1,6 +1,24 @@
 # Changelog
 
+## [1.20.0] - 2026-04-11 18:28
+
+### Summary
+- Migrated fast-step entity indexing from dictionary-based storage to SoA arrays with slot addressing and string-table indexes.
+- Added compressed adjacency (`offsets + edges`) for decomposition/containment traversal and switched JSON traversal to adjacency-backed reads.
+- Kept fast-step output parity while introducing lower-overhead in-memory structures and updating scanner tests for the new model.
+
+### Changed
+- Updated `src/FastStep/FastStepIndexes.cs`:
+  - replaced per-entity dictionaries with dense arrays (`EntityIdToSlot`, `EntityIdsBySlot`, string-index arrays);
+  - introduced `FastStepAdjacency` and adjacency build pipeline for decomposition/containment.
+- Updated `src/FastStep/StepEntityScanner.cs` to populate SoA fields (`SetNormalizedType`, `SetGlobalId`, `SetName`) and finalize adjacency after scan.
+- Updated `src/FastStep/FastStepJsonEmitter.cs` to traverse hierarchy via adjacency (`Offsets`/`Edges`) instead of grouped relation dictionaries.
+- Updated `src/FastStep/FastStepMappingCache.cs` to read normalized types and ids through SoA accessors.
+- Updated `tests/StepEntityScannerTests.cs` for SoA access patterns and adjacency initialization checks.
+- Updated project version to `1.20.0` in `src/ifc-metadata.csproj`.
+
 ## [1.19.0] - 2026-04-11 15:40
+
 
 ### Summary
 - Reworked fast-step scan/export internals to reduce retained runtime indexing data and remove duplicate traversal/count/relation buffers.

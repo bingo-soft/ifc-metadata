@@ -67,6 +67,7 @@ internal static class StepEntityScanner
             throw ex.InnerExceptions[0];
         }
 
+        indexes.BuildRelationAdjacency();
         diagnostics = scanDiagnostics;
         return indexes;
     }
@@ -104,7 +105,8 @@ internal static class StepEntityScanner
         var pooledEntityType = indexes.StringPool.Intern(entity.EntityType);
         var normalizedType = GetNormalizedType(indexes, pooledEntityType, normalizedByRawType);
 
-        indexes.NormalizedTypeByEntityId[entity.EntityId] = normalizedType;
+        indexes.EnsureEntitySlot(entity.EntityId);
+        indexes.SetNormalizedType(entity.EntityId, normalizedType);
 
         if (diagnostics is not null)
         {
@@ -242,7 +244,7 @@ internal static class StepEntityScanner
             var globalId = StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(globalStart, globalLength));
             if (!string.IsNullOrWhiteSpace(globalId))
             {
-                indexes.EntityGlobalIds[entityId] = indexes.StringPool.Intern(globalId);
+                indexes.SetGlobalId(entityId, indexes.StringPool.Intern(globalId));
             }
         }
 
@@ -251,10 +253,11 @@ internal static class StepEntityScanner
             var name = StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(nameStart, nameLength));
             if (name is not null)
             {
-                indexes.EntityNames[entityId] = indexes.StringPool.Intern(name);
+                indexes.SetName(entityId, indexes.StringPool.Intern(name));
             }
         }
     }
 }
 
 internal readonly record struct FastStepScanResult(FastStepIndexes Indexes, FastStepHeader Header, FastStepScanDiagnostics Diagnostics);
+

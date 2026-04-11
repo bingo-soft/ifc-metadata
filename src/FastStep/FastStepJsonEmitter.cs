@@ -28,8 +28,8 @@ internal static class FastStepJsonEmitter
         }
 
         var project = indexes.Project.Value;
-        var relationMaps = BuildRelationMaps(indexes);
-        var lastNodesByObjectId = BuildLastNodesByObjectId(indexes, project, preserveOrder, relationMaps, out var lastVisitOrderByObjectId);
+        var relationAdjacency = new FastStepRelationAdjacency(indexes.DecompositionAdjacency, indexes.ContainmentAdjacency);
+        var lastNodesByObjectId = BuildLastNodesByObjectId(indexes, project, preserveOrder, relationAdjacency, out var lastVisitOrderByObjectId);
         var uniqueMetaObjects = lastNodesByObjectId.Count;
 
         var mappings = FastStepMappingCache.Build(indexes);
@@ -70,18 +70,11 @@ internal static class FastStepJsonEmitter
         return new IfcExportReport(header.Schema, uniqueMetaObjects);
     }
 
-    private static FastStepRelationMaps BuildRelationMaps(FastStepIndexes indexes)
-    {
-        return new FastStepRelationMaps(
-            BuildRelationMap(indexes.DecompositionRelations),
-            BuildRelationMap(indexes.ContainmentRelations));
-    }
-
     private static Dictionary<string, FastStepTraversalNode> BuildLastNodesByObjectId(
         FastStepIndexes indexes,
         FastStepProjectRecord project,
         bool preserveOrder,
-        FastStepRelationMaps relationMaps,
+        FastStepRelationAdjacency relationAdjacency,
         out Dictionary<string, int> lastVisitOrderByObjectId)
     {
         var stack = new Stack<FastStepTraversalNode>();
@@ -101,66 +94,49 @@ internal static class FastStepJsonEmitter
                 visitOrder++;
             }
 
-            PushChildren(stack, indexes, relationMaps.DecompositionMap, current, preserveOrder);
-            PushChildren(stack, indexes, relationMaps.ContainmentMap, current, preserveOrder);
+            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder);
+            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder);
         }
 
         return lastNodesByObjectId;
     }
 
-    private static Dictionary<int, List<FastStepRelationRecord>> BuildRelationMap(List<FastStepRelationRecord> relations)
-    {
-        var map = new Dictionary<int, List<FastStepRelationRecord>>();
-
-        foreach (var relation in relations)
-        {
-            if (!map.TryGetValue(relation.RelatingId, out var groupedRelations))
-            {
-                groupedRelations = [];
-                map[relation.RelatingId] = groupedRelations;
-            }
-
-            groupedRelations.Add(relation);
-        }
-
-        return map;
-    }
-
     private static void PushChildren(
         Stack<FastStepTraversalNode> stack,
         FastStepIndexes indexes,
-        Dictionary<int, List<FastStepRelationRecord>> relationMap,
+        FastStepAdjacency adjacency,
         FastStepTraversalNode current,
         bool preserveOrder)
     {
-        if (!relationMap.TryGetValue(current.EntityId, out var groupedRelations) || groupedRelations.Count == 0)
+        var parentSlot = indexes.GetSlotOrMissing(current.EntityId);
+        if (parentSlot < 0 || parentSlot + 1 >= adjacency.Offsets.Length)
+        {
+            return;
+        }
+
+        var start = adjacency.Offsets[parentSlot];
+        var end = adjacency.Offsets[parentSlot + 1];
+        if (start >= end)
         {
             return;
         }
 
         if (!preserveOrder)
         {
-            for (var relationIndex = groupedRelations.Count - 1; relationIndex >= 0; relationIndex--)
+            for (var edgeIndex = end - 1; edgeIndex >= start; edgeIndex--)
             {
-                var relation = groupedRelations[relationIndex];
-                for (var childIndex = relation.RelatedIds.Count - 1; childIndex >= 0; childIndex--)
-                {
-                    var childId = relation.RelatedIds[childIndex];
-                    stack.Push(new FastStepTraversalNode(childId, GetGlobalId(indexes, childId), current.ObjectId));
-                }
+                var childSlot = adjacency.Edges[edgeIndex];
+                var childEntityId = indexes.EntityIdsBySlot[childSlot];
+                stack.Push(new FastStepTraversalNode(childEntityId, GetGlobalId(indexes, childEntityId), current.ObjectId));
             }
 
             return;
         }
 
-        var childIds = new List<int>();
-        for (var relationIndex = 0; relationIndex < groupedRelations.Count; relationIndex++)
+        var childIds = new List<int>(end - start);
+        for (var edgeIndex = start; edgeIndex < end; edgeIndex++)
         {
-            var relation = groupedRelations[relationIndex];
-            for (var childIndex = 0; childIndex < relation.RelatedIds.Count; childIndex++)
-            {
-                childIds.Add(relation.RelatedIds[childIndex]);
-            }
+            childIds.Add(indexes.EntityIdsBySlot[adjacency.Edges[edgeIndex]]);
         }
 
         childIds.Sort((left, right) => StringComparer.Ordinal.Compare(GetGlobalId(indexes, left), GetGlobalId(indexes, right)));
@@ -171,7 +147,6 @@ internal static class FastStepJsonEmitter
             stack.Push(new FastStepTraversalNode(childId, GetGlobalId(indexes, childId), current.ObjectId));
         }
     }
-
 
     private static void WriteMetaObject(
         Utf8JsonWriter writer,
@@ -232,17 +207,16 @@ internal static class FastStepJsonEmitter
 
     private static string GetGlobalId(FastStepIndexes indexes, int entityId)
     {
-        return indexes.EntityGlobalIds.GetValueOrDefault(entityId);
+        return indexes.GetGlobalId(entityId);
     }
 
     private static string GetName(FastStepIndexes indexes, int entityId)
     {
-        return indexes.EntityNames.GetValueOrDefault(entityId);
+        return indexes.GetName(entityId);
     }
 
     private readonly record struct FastStepTraversalNode(int EntityId, string ObjectId, string ParentObjectId);
 
-    private readonly record struct FastStepRelationMaps(
-        Dictionary<int, List<FastStepRelationRecord>> DecompositionMap,
-        Dictionary<int, List<FastStepRelationRecord>> ContainmentMap);
+    private readonly record struct FastStepRelationAdjacency(FastStepAdjacency Decomposition, FastStepAdjacency Containment);
 }
+

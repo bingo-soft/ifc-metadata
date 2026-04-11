@@ -9,19 +9,15 @@ internal sealed class FastStepMappingCache
 
     private FastStepMappingCache(
         FastStepIndexes indexes,
-        Dictionary<int, string> normalizedTypeByEntityId,
         Dictionary<int, List<string>> propertySetByObjectId,
         Dictionary<int, string> materialByObjectId,
         Dictionary<int, string> typeByObjectId)
     {
         _indexes = indexes;
-        NormalizedTypeByEntityId = normalizedTypeByEntityId;
         PropertySetByObjectId = propertySetByObjectId;
         MaterialByObjectId = materialByObjectId;
         TypeByObjectId = typeByObjectId;
     }
-
-    internal Dictionary<int, string> NormalizedTypeByEntityId { get; }
 
     internal Dictionary<int, List<string>> PropertySetByObjectId { get; }
 
@@ -31,17 +27,16 @@ internal sealed class FastStepMappingCache
 
     internal static FastStepMappingCache Build(FastStepIndexes indexes)
     {
-        var normalizedTypeByEntityId = BuildNormalizedTypeMap(indexes);
         var propertySetByObjectId = BuildPropertySetMap(indexes);
-        var materialByObjectId = BuildMaterialMap(indexes, normalizedTypeByEntityId);
-        var typeByObjectId = BuildTypeMap(indexes, normalizedTypeByEntityId);
+        var materialByObjectId = BuildMaterialMap(indexes);
+        var typeByObjectId = BuildTypeMap(indexes);
 
-        return new FastStepMappingCache(indexes, normalizedTypeByEntityId, propertySetByObjectId, materialByObjectId, typeByObjectId);
+        return new FastStepMappingCache(indexes, propertySetByObjectId, materialByObjectId, typeByObjectId);
     }
 
     internal string GetTypeName(int entityId)
     {
-        return NormalizedTypeByEntityId.GetValueOrDefault(entityId, "Unknown");
+        return _indexes.GetNormalizedTypeName(entityId) ?? "Unknown";
     }
 
     internal string FormatRelatedReference(int relatedEntityId)
@@ -49,11 +44,6 @@ internal sealed class FastStepMappingCache
         var typeName = GetTypeName(relatedEntityId);
         var value = $"{typeName}_{relatedEntityId}";
         return _indexes.StringPool.Intern(value);
-    }
-
-    private static Dictionary<int, string> BuildNormalizedTypeMap(FastStepIndexes indexes)
-    {
-        return indexes.NormalizedTypeByEntityId;
     }
 
     private static Dictionary<int, List<string>> BuildPropertySetMap(FastStepIndexes indexes)
@@ -83,13 +73,13 @@ internal sealed class FastStepMappingCache
         return map;
     }
 
-    private static Dictionary<int, string> BuildMaterialMap(FastStepIndexes indexes, Dictionary<int, string> normalizedTypeByEntityId)
+    private static Dictionary<int, string> BuildMaterialMap(FastStepIndexes indexes)
     {
         var map = new Dictionary<int, string>();
 
         foreach (var relation in indexes.AssociatesMaterialRelations)
         {
-            var materialId = FormatRelatedReference(indexes, normalizedTypeByEntityId, relation.RelatingId);
+            var materialId = FormatRelatedReference(indexes, relation.RelatingId);
             for (var i = 0; i < relation.RelatedIds.Count; i++)
             {
                 map[relation.RelatedIds[i]] = materialId;
@@ -99,16 +89,16 @@ internal sealed class FastStepMappingCache
         return map;
     }
 
-    private static Dictionary<int, string> BuildTypeMap(FastStepIndexes indexes, Dictionary<int, string> normalizedTypeByEntityId)
+    private static Dictionary<int, string> BuildTypeMap(FastStepIndexes indexes)
     {
         var map = new Dictionary<int, string>();
 
         foreach (var relation in indexes.DefinesByTypeRelations)
         {
-            var typeId = indexes.EntityGlobalIds.GetValueOrDefault(relation.RelatingId);
+            var typeId = indexes.GetGlobalId(relation.RelatingId);
             if (string.IsNullOrWhiteSpace(typeId))
             {
-                typeId = FormatRelatedReference(indexes, normalizedTypeByEntityId, relation.RelatingId);
+                typeId = FormatRelatedReference(indexes, relation.RelatingId);
             }
 
             for (var i = 0; i < relation.RelatedIds.Count; i++)
@@ -120,12 +110,9 @@ internal sealed class FastStepMappingCache
         return map;
     }
 
-    private static string FormatRelatedReference(
-        FastStepIndexes indexes,
-        Dictionary<int, string> normalizedTypeByEntityId,
-        int relatedEntityId)
+    private static string FormatRelatedReference(FastStepIndexes indexes, int relatedEntityId)
     {
-        var typeName = normalizedTypeByEntityId.GetValueOrDefault(relatedEntityId, "Unknown");
+        var typeName = indexes.GetNormalizedTypeName(relatedEntityId) ?? "Unknown";
         var value = $"{typeName}_{relatedEntityId}";
         return indexes.StringPool.Intern(value);
     }

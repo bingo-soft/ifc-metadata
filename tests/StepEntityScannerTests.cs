@@ -28,7 +28,7 @@ public sealed class StepEntityScannerTests
         using var reader = new StringReader(step);
         var indexes = StepEntityScanner.Scan(reader);
 
-        Assert.Equal(7, indexes.NormalizedTypeByEntityId.Count);
+        Assert.Equal(7, indexes.EntityCount);
 
         Assert.True(indexes.Project.HasValue);
         Assert.Equal("project-guid", indexes.Project.Value.GlobalId);
@@ -52,10 +52,13 @@ public sealed class StepEntityScannerTests
         Assert.Equal(200, associatesMaterial.RelatingId);
         Assert.Equal(new[] { 12 }, associatesMaterial.RelatedIds);
 
-        var definesByType = Assert.Single(indexes.DefinesByTypeRelations);
+                var definesByType = Assert.Single(indexes.DefinesByTypeRelations);
         Assert.Equal(300, definesByType.RelatingId);
         Assert.Equal(new[] { 12 }, definesByType.RelatedIds);
+
+        Assert.Equal(indexes.EntityCount + 1, indexes.DecompositionAdjacency.Offsets.Length);
     }
+
 
     [Fact]
     public void Scan_IndexesEntityOffsets_AndArgumentRanges()
@@ -63,7 +66,7 @@ public sealed class StepEntityScannerTests
         const string step = "prefix #10=IFCPROJECT('guid',$,'Project Name',$,$,$,$,$,$); suffix";
 
         using var reader = new StringReader(step);
-        var indexes = StepEntityScanner.Scan(reader, new FastStepScanOptions(CaptureDiagnostics: true), out var diagnostics);
+        _ = StepEntityScanner.Scan(reader, new FastStepScanOptions(CaptureDiagnostics: true), out var diagnostics);
 
         Assert.NotNull(diagnostics);
 
@@ -96,8 +99,8 @@ public sealed class StepEntityScannerTests
         using var reader = new StringReader(step);
         var indexes = StepEntityScanner.Scan(reader);
 
-        Assert.True(object.ReferenceEquals(indexes.EntityNames[10], indexes.EntityNames[11]));
-        Assert.True(object.ReferenceEquals(indexes.NormalizedTypeByEntityId[12], indexes.NormalizedTypeByEntityId[13]));
+        Assert.True(object.ReferenceEquals(indexes.GetName(10), indexes.GetName(11)));
+        Assert.True(object.ReferenceEquals(indexes.GetNormalizedTypeName(12), indexes.GetNormalizedTypeName(13)));
     }
 
     [Fact]
@@ -137,3 +140,4 @@ public sealed class StepEntityScannerTests
         Assert.Equal("Project 'A'", indexes.Project.Value.Name);
     }
 }
+
