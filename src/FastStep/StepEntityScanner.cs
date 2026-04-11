@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Channels;
@@ -22,8 +24,7 @@ internal static class StepEntityScanner
     {
         var indexes = new FastStepIndexes();
         var scanDiagnostics = options.CaptureDiagnostics ? new FastStepScanDiagnostics() : null;
-
-        var relationEdges = new FastStepRelationEdgeBuffers();
+        using var relationEdges = new FastStepRelationEdgeBuffers();
 
         var entitiesChannel = Channel.CreateBounded<StepEntityToken>(new BoundedChannelOptions(1024)
         {
@@ -220,7 +221,7 @@ internal static class StepEntityScanner
         indexes.PropertySetGlobalIds[entityId] = indexes.StringPool.Intern(globalId);
     }
 
-    private static void IndexSingleToListEdges(List<FastStepRelationEdge> target, string rawArguments, int parentArgIndex, int childrenArgIndex)
+    private static void IndexSingleToListEdges(FastStepRelationEdgeBuffer target, string rawArguments, int parentArgIndex, int childrenArgIndex)
     {
         var rawArgumentsSpan = rawArguments.AsSpan();
         if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, parentArgIndex, out var parentStart, out var parentLength)
@@ -242,7 +243,7 @@ internal static class StepEntityScanner
         }
     }
 
-    private static void IndexListToSingleEdges(List<FastStepRelationEdge> target, string rawArguments, int parentsArgIndex, int childArgIndex)
+    private static void IndexListToSingleEdges(FastStepRelationEdgeBuffer target, string rawArguments, int parentsArgIndex, int childArgIndex)
     {
         var rawArgumentsSpan = rawArguments.AsSpan();
         if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, parentsArgIndex, out var parentsStart, out var parentsLength)
@@ -288,19 +289,90 @@ internal static class StepEntityScanner
     }
 }
 
-internal sealed class FastStepRelationEdgeBuffers
+internal sealed class FastStepRelationEdgeBuffers : IDisposable
 {
-    internal List<FastStepRelationEdge> Decomposition { get; } = [];
+    internal FastStepRelationEdgeBuffer Decomposition { get; } = new();
 
-    internal List<FastStepRelationEdge> Containment { get; } = [];
+    internal FastStepRelationEdgeBuffer Containment { get; } = new();
 
-    internal List<FastStepRelationEdge> DefinesByProperties { get; } = [];
+    internal FastStepRelationEdgeBuffer DefinesByProperties { get; } = new();
 
-    internal List<FastStepRelationEdge> AssociatesMaterial { get; } = [];
+    internal FastStepRelationEdgeBuffer AssociatesMaterial { get; } = new();
 
-    internal List<FastStepRelationEdge> DefinesByType { get; } = [];
+    internal FastStepRelationEdgeBuffer DefinesByType { get; } = new();
+
+    public void Dispose()
+    {
+        Decomposition.Dispose();
+        Containment.Dispose();
+        DefinesByProperties.Dispose();
+        AssociatesMaterial.Dispose();
+        DefinesByType.Dispose();
+    }
+}
+
+internal sealed class FastStepRelationEdgeBuffer : IReadOnlyList<FastStepRelationEdge>, IDisposable
+{
+    private const int SegmentSize = 256;
+
+    private readonly List<FastStepRelationEdge[]> _segments = [];
+
+    private int _count;
+
+    public FastStepRelationEdge this[int index]
+    {
+        get
+        {
+            if ((uint)index >= (uint)_count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            var segmentIndex = index / SegmentSize;
+            var offsetInSegment = index % SegmentSize;
+            return _segments[segmentIndex][offsetInSegment];
+        }
+    }
+
+    public int Count => _count;
+
+    public void Add(FastStepRelationEdge edge)
+    {
+        var segmentIndex = _count / SegmentSize;
+        if (segmentIndex == _segments.Count)
+        {
+            _segments.Add(ArrayPool<FastStepRelationEdge>.Shared.Rent(SegmentSize));
+        }
+
+        var offsetInSegment = _count % SegmentSize;
+        _segments[segmentIndex][offsetInSegment] = edge;
+        _count++;
+    }
+
+    public void Dispose()
+    {
+        for (var i = 0; i < _segments.Count; i++)
+        {
+            ArrayPool<FastStepRelationEdge>.Shared.Return(_segments[i]);
+        }
+
+        _segments.Clear();
+        _count = 0;
+    }
+
+    public IEnumerator<FastStepRelationEdge> GetEnumerator()
+    {
+        for (var i = 0; i < _count; i++)
+        {
+            yield return this[i];
+        }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 }
 
 internal readonly record struct FastStepScanResult(FastStepIndexes Indexes, FastStepHeader Header, FastStepScanDiagnostics Diagnostics);
-
 

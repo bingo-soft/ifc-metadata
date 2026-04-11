@@ -1,6 +1,20 @@
 # Changelog
 
+## [1.22.0] - 2026-04-11 19:39
+
+### Summary
+- Reduced scan-stage allocation pressure in fast-step relation indexing by replacing per-relation `List<FastStepRelationEdge>` growth with pooled segmented edge buffers.
+- Kept adjacency build contract unchanged by exposing the new edge storage as `IReadOnlyList<FastStepRelationEdge>`.
+
+### Changed
+- Updated `src/FastStep/StepEntityScanner.cs`:
+  - relation edge collection now uses `FastStepRelationEdgeBuffer` backed by `ArrayPool<FastStepRelationEdge>` segments;
+  - scanner now disposes relation edge buffers after adjacency finalization to return rented arrays to the pool;
+  - relation indexing helpers (`IndexSingleToListEdges`, `IndexListToSingleEdges`) now write into the segmented buffer type instead of `List<FastStepRelationEdge>`.
+- Updated project version to `1.22.0` in `src/ifc-metadata.csproj`.
+
 ## [1.21.0] - 2026-04-11 18:52
+
 
 ### Summary
 - Completed migration of fast-step relation storage from object lists to adjacency-only runtime structures.
