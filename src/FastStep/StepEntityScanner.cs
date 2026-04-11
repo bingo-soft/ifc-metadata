@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Bingosoft.Net.IfcMetadata.FastStep.Mmf;
 
 namespace Bingosoft.Net.IfcMetadata.FastStep;
 
@@ -25,6 +26,9 @@ internal static class StepEntityScanner
         var indexes = new FastStepIndexes();
         var scanDiagnostics = options.CaptureDiagnostics ? new FastStepScanDiagnostics() : null;
         using var relationEdges = new FastStepRelationEdgeBuffers();
+        using var intermediateWriter = options.UseMmfIntermediateStore
+            ? new FastStepMmfIntermediateWriter(options.MmfIntermediateDirectoryPath, options.MmfSegmentSize)
+            : null;
 
         var entitiesChannel = Channel.CreateBounded<StepEntityToken>(new BoundedChannelOptions(1024)
         {
@@ -57,7 +61,7 @@ internal static class StepEntityScanner
 
             await foreach (var entity in entitiesChannel.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                IndexEntity(indexes, relationEdges, entity, scanDiagnostics, normalizedByRawType);
+                IndexEntity(indexes, relationEdges, entity, scanDiagnostics, normalizedByRawType, intermediateWriter);
             }
         });
 
@@ -110,13 +114,26 @@ internal static class StepEntityScanner
         FastStepRelationEdgeBuffers relationEdges,
         StepEntityToken entity,
         FastStepScanDiagnostics diagnostics,
-        Dictionary<string, string> normalizedByRawType)
+        Dictionary<string, string> normalizedByRawType,
+        FastStepMmfIntermediateWriter intermediateWriter)
     {
         var pooledEntityType = indexes.StringPool.Intern(entity.EntityType);
         var normalizedType = GetNormalizedType(indexes, pooledEntityType, normalizedByRawType);
 
         indexes.EnsureEntitySlot(entity.EntityId);
         indexes.SetNormalizedType(entity.EntityId, normalizedType);
+
+        if (intermediateWriter is not null)
+        {
+            var typeToken = indexes.StringPool.InternIndex(normalizedType);
+            var entityFlags = FastStepEntityFlags.ParsedOk;
+            if (entity.RawArguments.IndexOf('\'', StringComparison.Ordinal) >= 0)
+            {
+                entityFlags |= FastStepEntityFlags.HasStringArgs;
+            }
+
+            intermediateWriter.WriteEntity(entity.EntityId, typeToken, entity.RawArguments, entityFlags);
+        }
 
         if (diagnostics is not null)
         {
@@ -129,7 +146,7 @@ internal static class StepEntityScanner
         }
 
         IndexEntityIdentity(indexes, entity.EntityId, entity.RawArguments);
-        IndexKnownEntity(indexes, relationEdges, entity.EntityId, pooledEntityType, entity.RawArguments);
+        IndexKnownEntity(indexes, relationEdges, entity.EntityId, pooledEntityType, entity.RawArguments, intermediateWriter);
     }
 
     private static string GetNormalizedType(
@@ -152,7 +169,8 @@ internal static class StepEntityScanner
         FastStepRelationEdgeBuffers relationEdges,
         int entityId,
         string entityType,
-        string rawArguments)
+        string rawArguments,
+        FastStepMmfIntermediateWriter intermediateWriter)
     {
         switch (entityType.ToUpperInvariant())
         {
@@ -160,19 +178,19 @@ internal static class StepEntityScanner
                 IndexProject(indexes, entityId, rawArguments);
                 break;
             case "IFCRELAGGREGATES":
-                IndexSingleToListEdges(relationEdges.Decomposition, rawArguments, parentArgIndex: 4, childrenArgIndex: 5);
+                IndexSingleToListEdges(relationEdges.Decomposition, rawArguments, parentArgIndex: 4, childrenArgIndex: 5, FastStepRelationKind.Contains, intermediateWriter);
                 break;
             case "IFCRELCONTAINEDINSPATIALSTRUCTURE":
-                IndexSingleToListEdges(relationEdges.Containment, rawArguments, parentArgIndex: 5, childrenArgIndex: 4);
+                IndexSingleToListEdges(relationEdges.Containment, rawArguments, parentArgIndex: 5, childrenArgIndex: 4, FastStepRelationKind.SpatialParent, intermediateWriter);
                 break;
             case "IFCRELDEFINESBYPROPERTIES":
-                IndexListToSingleEdges(relationEdges.DefinesByProperties, rawArguments, parentsArgIndex: 4, childArgIndex: 5);
+                IndexListToSingleEdges(relationEdges.DefinesByProperties, rawArguments, parentsArgIndex: 4, childArgIndex: 5, FastStepRelationKind.PropertySet, intermediateWriter);
                 break;
             case "IFCRELASSOCIATESMATERIAL":
-                IndexListToSingleEdges(relationEdges.AssociatesMaterial, rawArguments, parentsArgIndex: 4, childArgIndex: 5);
+                IndexListToSingleEdges(relationEdges.AssociatesMaterial, rawArguments, parentsArgIndex: 4, childArgIndex: 5, FastStepRelationKind.Material, intermediateWriter);
                 break;
             case "IFCRELDEFINESBYTYPE":
-                IndexListToSingleEdges(relationEdges.DefinesByType, rawArguments, parentsArgIndex: 4, childArgIndex: 5);
+                IndexListToSingleEdges(relationEdges.DefinesByType, rawArguments, parentsArgIndex: 4, childArgIndex: 5, FastStepRelationKind.TypeOf, intermediateWriter);
                 break;
             case "IFCPROPERTYSET":
                 IndexPropertySet(indexes, entityId, rawArguments);
@@ -221,7 +239,13 @@ internal static class StepEntityScanner
         indexes.PropertySetGlobalIds[entityId] = indexes.StringPool.Intern(globalId);
     }
 
-    private static void IndexSingleToListEdges(FastStepRelationEdgeBuffer target, string rawArguments, int parentArgIndex, int childrenArgIndex)
+    private static void IndexSingleToListEdges(
+        FastStepRelationEdgeBuffer target,
+        string rawArguments,
+        int parentArgIndex,
+        int childrenArgIndex,
+        FastStepRelationKind relationKind,
+        FastStepMmfIntermediateWriter intermediateWriter)
     {
         var rawArgumentsSpan = rawArguments.AsSpan();
         if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, parentArgIndex, out var parentStart, out var parentLength)
@@ -240,10 +264,17 @@ internal static class StepEntityScanner
         for (var i = 0; i < childIds.Count; i++)
         {
             target.Add(new FastStepRelationEdge(parentId.Value, childIds[i]));
+            intermediateWriter?.WriteRelation(parentId.Value, childIds[i], relationKind);
         }
     }
 
-    private static void IndexListToSingleEdges(FastStepRelationEdgeBuffer target, string rawArguments, int parentsArgIndex, int childArgIndex)
+    private static void IndexListToSingleEdges(
+        FastStepRelationEdgeBuffer target,
+        string rawArguments,
+        int parentsArgIndex,
+        int childArgIndex,
+        FastStepRelationKind relationKind,
+        FastStepMmfIntermediateWriter intermediateWriter)
     {
         var rawArgumentsSpan = rawArguments.AsSpan();
         if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, parentsArgIndex, out var parentsStart, out var parentsLength)
@@ -262,6 +293,7 @@ internal static class StepEntityScanner
         for (var i = 0; i < parentIds.Count; i++)
         {
             target.Add(new FastStepRelationEdge(parentIds[i], childId.Value));
+            intermediateWriter?.WriteRelation(parentIds[i], childId.Value, relationKind);
         }
     }
 

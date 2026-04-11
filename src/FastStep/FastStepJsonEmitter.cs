@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using Bingosoft.Net.IfcMetadata.FastStep.Mmf;
 
 namespace Bingosoft.Net.IfcMetadata.FastStep;
 
@@ -20,18 +21,32 @@ internal static class FastStepJsonEmitter
         bool preserveOrder,
         int outputFileBufferSize,
         bool writeThrough,
-        Action<int, int> progressReporter)
+        Action<int, int> progressReporter,
+        FastStepMmfIntermediateReader intermediateReader = null)
     {
         if (indexes.Project is null || string.IsNullOrWhiteSpace(indexes.Project.Value.GlobalId))
         {
             throw new InvalidOperationException("IFC project root (IFCPROJECT) was not found in STEP data.");
         }
 
+        return intermediateReader is null
+            ? ExportWithoutSpill(indexes, header, jsonTargetFile, preserveOrder, outputFileBufferSize, writeThrough, progressReporter)
+            : ExportWithSpill(indexes, header, jsonTargetFile, preserveOrder, outputFileBufferSize, writeThrough, progressReporter, intermediateReader);
+    }
+
+    private static IfcExportReport ExportWithoutSpill(
+        FastStepIndexes indexes,
+        FastStepHeader header,
+        FileInfo jsonTargetFile,
+        bool preserveOrder,
+        int outputFileBufferSize,
+        bool writeThrough,
+        Action<int, int> progressReporter)
+    {
         var project = indexes.Project.Value;
         var relationAdjacency = new FastStepRelationAdjacency(indexes.DecompositionAdjacency, indexes.ContainmentAdjacency);
-        var lastNodesByObjectId = BuildLastNodesByObjectId(indexes, project, preserveOrder, relationAdjacency, out var lastVisitOrderByObjectId);
-        var uniqueMetaObjects = lastNodesByObjectId.Count;
-
+        var orderedNodes = BuildLastNodesByVisitOrder(indexes, project, preserveOrder, relationAdjacency, intermediateReader: null);
+        var uniqueMetaObjects = orderedNodes.Count;
         var mappings = FastStepMappingCache.Build(indexes);
 
         using var stream = IfcStreamingExportUtilities.OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
@@ -49,17 +64,18 @@ internal static class FastStepJsonEmitter
         var processedMetaObjects = 0;
         progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
-        List<string> orderedObjectIds = [.. lastNodesByObjectId.Keys];
-        orderedObjectIds.Sort((left, right) => lastVisitOrderByObjectId[left].CompareTo(lastVisitOrderByObjectId[right]));
-
-        for (var i = 0; i < orderedObjectIds.Count; i++)
+        const int emitBatchSize = 4096;
+        foreach (var node in orderedNodes.Values)
         {
-            var objectId = orderedObjectIds[i];
-            var node = lastNodesByObjectId[objectId];
-            WriteMetaObject(writer, indexes, mappings, project, node);
+            WriteMetaObject(writer, indexes, mappings, project, node, intermediateReader: null);
 
             processedMetaObjects++;
             progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
+
+            if (processedMetaObjects % emitBatchSize == 0)
+            {
+                writer.Flush();
+            }
         }
 
         writer.WriteEndObject();
@@ -70,35 +86,159 @@ internal static class FastStepJsonEmitter
         return new IfcExportReport(header.Schema, uniqueMetaObjects);
     }
 
-    private static Dictionary<string, FastStepTraversalNode> BuildLastNodesByObjectId(
+    private static IfcExportReport ExportWithSpill(
+        FastStepIndexes indexes,
+        FastStepHeader header,
+        FileInfo jsonTargetFile,
+        bool preserveOrder,
+        int outputFileBufferSize,
+        bool writeThrough,
+        Action<int, int> progressReporter,
+        FastStepMmfIntermediateReader intermediateReader)
+    {
+        var project = indexes.Project.Value;
+        var relationAdjacency = new FastStepRelationAdjacency(indexes.DecompositionAdjacency, indexes.ContainmentAdjacency);
+
+        CleanupObjectSegments(intermediateReader.DirectoryPath);
+        var lastOrderByObjectToken = BuildLastVisitOrderAndSpill(indexes, project, preserveOrder, relationAdjacency, intermediateReader);
+        var uniqueMetaObjects = lastOrderByObjectToken.Count;
+        var mappings = FastStepMappingCache.Build(indexes);
+
+        using var stream = IfcStreamingExportUtilities.OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
+        using var writer = new Utf8JsonWriter(stream, WriterOptions);
+
+        writer.WriteStartObject();
+        writer.WriteString("id", project.Name);
+        writer.WriteString("projectId", project.GlobalId);
+        writer.WriteString("author", header.Author ?? string.Empty);
+        writer.WriteString("createdAt", header.CreatedAt);
+        writer.WriteString("schema", header.Schema);
+        writer.WriteString("creatingApplication", header.CreatingApplication);
+        writer.WriteStartObject("metaObjects");
+
+        var processedMetaObjects = 0;
+        progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
+
+        const int emitBatchSize = 4096;
+        foreach (var record in intermediateReader.EnumerateObjectRecords())
+        {
+            if (!TryGetGlobalIdToken(indexes, intermediateReader, record.EntityId, out var objectToken)
+                || !lastOrderByObjectToken.TryGetValue(objectToken, out var lastOrder)
+                || lastOrder != record.OutputOrder)
+            {
+                continue;
+            }
+
+            WriteMetaObject(
+                writer,
+                indexes,
+                mappings,
+                project,
+                new FastStepTraversalNode(record.EntityId, record.PayloadLength),
+                intermediateReader);
+
+            processedMetaObjects++;
+            progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
+
+            if (processedMetaObjects % emitBatchSize == 0)
+            {
+                writer.Flush();
+            }
+        }
+
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+        writer.Flush();
+        stream.Flush();
+
+        return new IfcExportReport(header.Schema, uniqueMetaObjects);
+    }
+
+    private static Dictionary<ulong, int> BuildLastVisitOrderAndSpill(
         FastStepIndexes indexes,
         FastStepProjectRecord project,
         bool preserveOrder,
         FastStepRelationAdjacency relationAdjacency,
-        out Dictionary<string, int> lastVisitOrderByObjectId)
+        FastStepMmfIntermediateReader intermediateReader)
     {
         var stack = new Stack<FastStepTraversalNode>();
-        var lastNodesByObjectId = new Dictionary<string, FastStepTraversalNode>(StringComparer.Ordinal);
-        lastVisitOrderByObjectId = new Dictionary<string, int>(StringComparer.Ordinal);
+        var lastOrderByObjectToken = new Dictionary<ulong, int>();
 
+        using var objectStore = new FastStepMmfObjectStore(intermediateReader.DirectoryPath);
         var visitOrder = 0;
-        stack.Push(new FastStepTraversalNode(project.EntityId, project.GlobalId, null));
+        stack.Push(new FastStepTraversalNode(project.EntityId, ParentEntityId: -1));
 
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            if (!string.IsNullOrWhiteSpace(current.ObjectId))
+            if (TryGetGlobalIdToken(indexes, intermediateReader, current.EntityId, out var objectToken))
             {
-                lastNodesByObjectId[current.ObjectId] = current;
-                lastVisitOrderByObjectId[current.ObjectId] = visitOrder;
+                lastOrderByObjectToken[objectToken] = visitOrder;
+                objectStore.Append(new FastStepObjectRecord
+                {
+                    EntityId = current.EntityId,
+                    TypeToken = 0,
+                    PayloadSegmentId = 0,
+                    PayloadOffset = 0,
+                    PayloadLength = current.ParentEntityId,
+                    OutputOrder = visitOrder,
+                    Flags = (uint)(FastStepObjectFlags.ReadyToEmit | FastStepObjectFlags.Ordered),
+                    Reserved = 0,
+                });
+
                 visitOrder++;
             }
 
-            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder);
-            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder);
+            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder, intermediateReader);
+            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder, intermediateReader);
         }
 
-        return lastNodesByObjectId;
+        return lastOrderByObjectToken;
+    }
+
+    private static SortedDictionary<int, FastStepTraversalNode> BuildLastNodesByVisitOrder(
+        FastStepIndexes indexes,
+        FastStepProjectRecord project,
+        bool preserveOrder,
+        FastStepRelationAdjacency relationAdjacency,
+        FastStepMmfIntermediateReader intermediateReader)
+    {
+        var stack = new Stack<FastStepTraversalNode>();
+        var orderByObjectToken = new Dictionary<ulong, int>();
+        var nodesByOrder = new SortedDictionary<int, FastStepTraversalNode>();
+        var visitOrder = 0;
+
+        stack.Push(new FastStepTraversalNode(project.EntityId, ParentEntityId: -1));
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (TryGetGlobalIdToken(indexes, intermediateReader, current.EntityId, out var objectToken))
+            {
+                if (orderByObjectToken.TryGetValue(objectToken, out var previousOrder))
+                {
+                    nodesByOrder.Remove(previousOrder);
+                }
+
+                orderByObjectToken[objectToken] = visitOrder;
+                nodesByOrder[visitOrder] = current;
+                visitOrder++;
+            }
+
+            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder, intermediateReader);
+            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder, intermediateReader);
+        }
+
+        return nodesByOrder;
+    }
+
+    private static void CleanupObjectSegments(string directoryPath)
+    {
+        var files = Directory.GetFiles(directoryPath, "object_*.seg", SearchOption.TopDirectoryOnly);
+        for (var i = 0; i < files.Length; i++)
+        {
+            File.Delete(files[i]);
+        }
     }
 
     private static void PushChildren(
@@ -106,7 +246,8 @@ internal static class FastStepJsonEmitter
         FastStepIndexes indexes,
         FastStepAdjacency adjacency,
         FastStepTraversalNode current,
-        bool preserveOrder)
+        bool preserveOrder,
+        FastStepMmfIntermediateReader intermediateReader)
     {
         var parentSlot = indexes.GetSlotOrMissing(current.EntityId);
         if (parentSlot < 0 || parentSlot + 1 >= adjacency.Offsets.Length)
@@ -127,7 +268,7 @@ internal static class FastStepJsonEmitter
             {
                 var childSlot = adjacency.Edges[edgeIndex];
                 var childEntityId = indexes.EntityIdsBySlot[childSlot];
-                stack.Push(new FastStepTraversalNode(childEntityId, GetGlobalId(indexes, childEntityId), current.ObjectId));
+                stack.Push(new FastStepTraversalNode(childEntityId, current.EntityId));
             }
 
             return;
@@ -139,12 +280,12 @@ internal static class FastStepJsonEmitter
             childIds.Add(indexes.EntityIdsBySlot[adjacency.Edges[edgeIndex]]);
         }
 
-        childIds.Sort((left, right) => StringComparer.Ordinal.Compare(GetGlobalId(indexes, left), GetGlobalId(indexes, right)));
+        childIds.Sort((left, right) => StringComparer.Ordinal.Compare(GetGlobalId(indexes, intermediateReader, left), GetGlobalId(indexes, intermediateReader, right)));
 
         for (var i = childIds.Count - 1; i >= 0; i--)
         {
             var childId = childIds[i];
-            stack.Push(new FastStepTraversalNode(childId, GetGlobalId(indexes, childId), current.ObjectId));
+            stack.Push(new FastStepTraversalNode(childId, current.EntityId));
         }
     }
 
@@ -153,16 +294,26 @@ internal static class FastStepJsonEmitter
         FastStepIndexes indexes,
         FastStepMappingCache mappings,
         FastStepProjectRecord project,
-        FastStepTraversalNode node)
+        FastStepTraversalNode node,
+        FastStepMmfIntermediateReader intermediateReader)
     {
-        var objectId = node.ObjectId;
+        var objectId = GetGlobalId(indexes, intermediateReader, node.EntityId);
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            return;
+        }
+
+        var parentObjectId = node.ParentEntityId < 0
+            ? null
+            : GetGlobalId(indexes, intermediateReader, node.ParentEntityId);
+
         writer.WritePropertyName(objectId);
         writer.WriteStartObject();
 
         writer.WriteString("id", objectId);
-        writer.WriteString("name", GetName(indexes, node.EntityId));
+        writer.WriteString("name", GetName(indexes, intermediateReader, node.EntityId));
         writer.WriteString("type", mappings.GetTypeName(node.EntityId));
-        writer.WriteString("parent", node.ParentObjectId);
+        writer.WriteString("parent", parentObjectId);
 
         if (string.Equals(objectId, project.GlobalId, StringComparison.Ordinal))
         {
@@ -205,18 +356,91 @@ internal static class FastStepJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static string GetGlobalId(FastStepIndexes indexes, int entityId)
+    private static bool TryGetGlobalIdToken(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId, out ulong token)
     {
-        return indexes.GetGlobalId(entityId);
+        var globalId = GetGlobalId(indexes, intermediateReader, entityId);
+        if (string.IsNullOrWhiteSpace(globalId))
+        {
+            token = 0;
+            return false;
+        }
+
+        token = ComputeObjectIdToken(globalId);
+        return true;
     }
 
-    private static string GetName(FastStepIndexes indexes, int entityId)
+    private static ulong ComputeObjectIdToken(string objectId)
     {
-        return indexes.GetName(entityId);
+        const ulong fnvOffset = 14695981039346656037;
+        const ulong fnvPrime = 1099511628211;
+
+        var hash = fnvOffset;
+        for (var i = 0; i < objectId.Length; i++)
+        {
+            var ch = objectId[i];
+
+            hash ^= (byte)(ch & 0xFF);
+            hash *= fnvPrime;
+
+            hash ^= (byte)(ch >> 8);
+            hash *= fnvPrime;
+        }
+
+        return hash;
     }
 
-    private readonly record struct FastStepTraversalNode(int EntityId, string ObjectId, string ParentObjectId);
+    private static string GetGlobalId(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId)
+    {
+        var globalId = indexes.GetGlobalId(entityId);
+        if (!string.IsNullOrWhiteSpace(globalId))
+        {
+            return globalId;
+        }
+
+        return TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 0);
+    }
+
+    private static string GetName(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId)
+    {
+        var name = indexes.GetName(entityId);
+        if (name is not null)
+        {
+            return name;
+        }
+
+        return TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 2);
+    }
+
+    private static string TryReadStringArgumentFromMmf(FastStepMmfIntermediateReader intermediateReader, int entityId, int argumentIndex)
+    {
+        if (intermediateReader is null || !intermediateReader.TryReadRawArguments(entityId, out var rawArguments) || string.IsNullOrEmpty(rawArguments))
+        {
+            return null;
+        }
+
+        var rawArgumentsSpan = rawArguments.AsSpan();
+        if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, argumentIndex, out var start, out var length))
+        {
+            return null;
+        }
+
+        return StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(start, length));
+    }
+
+    private readonly record struct FastStepTraversalNode(int EntityId, int ParentEntityId);
 
     private readonly record struct FastStepRelationAdjacency(FastStepAdjacency Decomposition, FastStepAdjacency Containment);
 }
+
+
+
+
+
+
+
+
+
+
+
+
 

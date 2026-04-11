@@ -286,10 +286,16 @@ internal readonly record struct FastStepEntityRange(
     int ArgumentsStartOffset,
     int ArgumentsEndOffset);
 
-internal readonly record struct FastStepScanOptions(bool CaptureDiagnostics)
+internal readonly record struct FastStepScanOptions(
+    bool CaptureDiagnostics,
+    string MmfIntermediateDirectoryPath = null,
+    long MmfSegmentSize = 256L * 1024 * 1024)
 {
+    internal bool UseMmfIntermediateStore => !string.IsNullOrWhiteSpace(MmfIntermediateDirectoryPath);
+
     internal static readonly FastStepScanOptions Default = new(CaptureDiagnostics: false);
 }
+
 
 internal readonly record struct FastStepProjectRecord(int EntityId, string GlobalId, string Name);
 

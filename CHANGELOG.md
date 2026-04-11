@@ -1,6 +1,35 @@
 # Changelog
 
+## [1.23.0] - 2026-04-11 21:05
+
+### Summary
+- Added memory-mapped intermediate storage for fast-step scan/export to reduce retained in-memory payload for large IFC files.
+- Switched fast-step JSON emission to MMF-backed traversal spill/read path with streaming final-order filtering.
+- Reduced dedup key memory footprint in traversal bookkeeping by replacing string keys with compact numeric tokens.
+
+### Added
+- Added MMF infrastructure under `src/FastStep/Mmf/`:
+  - `FastStepMmfFormats.cs`
+  - `FastStepMmfSegmentManager.cs`
+  - `FastStepMmfStores.cs`
+  - `FastStepMmfIntermediateWriter.cs`
+  - `FastStepMmfIntermediateReader.cs`
+- Added extended scan options in `src/FastStep/FastStepIndexes.cs`:
+  - `MmfIntermediateDirectoryPath`
+  - `MmfSegmentSize`
+  - `UseMmfIntermediateStore`.
+- Added overloaded export entrypoint in `src/FastStepJsonExporter.cs` that accepts `FastStepScanOptions` and wires MMF reader mode.
+
+### Changed
+- Updated `src/FastStep/StepEntityScanner.cs` to optionally persist scanned entities/relations to MMF during indexing.
+- Updated `src/FastStep/FastStepJsonEmitter.cs`:
+  - added MMF-aware export path;
+  - spills traversal visits into object segments and replays them in streaming mode;
+  - keeps last-occurrence semantics while emitting only final records;
+  - uses numeric object-id tokens for dedup tracking instead of string dictionary keys.
+
 ## [1.22.0] - 2026-04-11 19:39
+
 
 ### Summary
 - Reduced scan-stage allocation pressure in fast-step relation indexing by replacing per-relation `List<FastStepRelationEdge>` growth with pooled segmented edge buffers.
