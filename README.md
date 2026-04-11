@@ -22,7 +22,7 @@ Single executable with engine routing and core functional blocks:
    - accepts optional `--preserve-order true|false` (default: `true`)
    - accepts optional `--engine xbim|fast-step` (default: `xbim`)
    - accepts optional `--verbosity` with modes `detailed|timing|none`
-   - accepts optional `--progress [completed|remaining]` and prints integer progress to console
+   - accepts optional `--progress [none|completed|remaining]` and prints integer progress to console (or disables it)
    - accepts optional output file tuning flags: `--output-buffer-kb N`, `--write-through|--no-write-through`
 
 
@@ -115,6 +115,7 @@ Verbosity option:
 Progress option:
 - `--progress completed` (default) — show completed percentage.
 - `--progress remaining` — show remaining percentage.
+- `--progress none` (or `--progress off`) — disable progress output.
 
 Output file write options:
 - `--output-buffer-kb N` — set output stream buffer size in KB (default: `512`).
@@ -144,7 +145,7 @@ Published executable names:
 ## CLI contract
 
 ```bash
-ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
 
 
 ```

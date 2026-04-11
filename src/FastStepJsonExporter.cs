@@ -15,12 +15,11 @@ internal static class FastStepJsonExporter
         bool writeThrough,
         Action<int, int> progressReporter)
     {
-        var indexes = StepEntityScanner.Scan(ifcSourceFile);
-        var header = StepHeaderReader.Read(ifcSourceFile);
+        var scanResult = StepEntityScanner.ScanWithHeader(ifcSourceFile);
 
         return FastStepJsonEmitter.Export(
-            indexes,
-            header,
+            scanResult.Indexes,
+            scanResult.Header,
             jsonTargetFile,
             preserveOrder,
             outputFileBufferSize,

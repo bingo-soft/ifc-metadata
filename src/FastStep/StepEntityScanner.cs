@@ -10,14 +10,19 @@ internal static class StepEntityScanner
 {
     internal static FastStepIndexes Scan(FileInfo ifcSourceFile)
     {
-        using var stream = ifcSourceFile.OpenRead();
-        using var reader = new StreamReader(stream);
-        return Scan(reader);
+        return ScanWithHeader(ifcSourceFile).Indexes;
     }
 
     internal static FastStepIndexes Scan(TextReader reader)
     {
+        return Scan(reader, FastStepScanOptions.Default, out _);
+    }
+
+    internal static FastStepIndexes Scan(TextReader reader, FastStepScanOptions options, out FastStepScanDiagnostics diagnostics)
+    {
         var indexes = new FastStepIndexes();
+        var scanDiagnostics = options.CaptureDiagnostics ? new FastStepScanDiagnostics() : null;
+
         var entitiesChannel = Channel.CreateBounded<StepEntityToken>(new BoundedChannelOptions(1024)
         {
             SingleReader = true,
@@ -29,7 +34,7 @@ internal static class StepEntityScanner
         {
             try
             {
-                foreach (var entity in StepLexer.EnumerateEntities(reader))
+                foreach (var entity in StepLexer.EnumerateEntities(reader, captureRawArguments: true))
                 {
                     await entitiesChannel.Writer.WriteAsync(entity).ConfigureAwait(false);
                 }
@@ -45,9 +50,11 @@ internal static class StepEntityScanner
 
         var consumer = Task.Run(async () =>
         {
+            var normalizedByRawType = new Dictionary<string, string>(StringComparer.Ordinal);
+
             await foreach (var entity in entitiesChannel.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                IndexEntity(indexes, entity);
+                IndexEntity(indexes, entity, scanDiagnostics, normalizedByRawType);
             }
         });
 
@@ -60,57 +67,112 @@ internal static class StepEntityScanner
             throw ex.InnerExceptions[0];
         }
 
+        diagnostics = scanDiagnostics;
         return indexes;
     }
 
-    private static void IndexEntity(FastStepIndexes indexes, StepEntityToken entity)
+    internal static FastStepScanResult ScanWithHeader(FileInfo ifcSourceFile)
     {
-        var args = StepParsingUtilities.SplitTopLevelArguments(entity.RawArguments);
-        var pooledEntityType = indexes.StringPool.Intern(entity.EntityType);
-
-        indexes.Entities[entity.EntityId] = new FastStepEntityRecord(entity.EntityId, pooledEntityType, entity.RawArguments);
-        indexes.EntityRanges[entity.EntityId] = new FastStepEntityRange(
-            entity.StatementStartOffset,
-            entity.StatementEndOffset,
-            entity.ArgumentsStartOffset,
-            entity.ArgumentsEndOffset);
-        IndexEntityIdentity(indexes, entity.EntityId, args);
-        IndexKnownEntity(indexes, entity.EntityId, pooledEntityType, args);
+        return ScanWithHeader(ifcSourceFile, FastStepScanOptions.Default);
     }
 
-    private static void IndexKnownEntity(FastStepIndexes indexes, int entityId, string entityType, List<string> args)
+    internal static FastStepScanResult ScanWithHeader(FileInfo ifcSourceFile, FastStepScanOptions options)
     {
+        using var stream = ifcSourceFile.OpenRead();
+        using var reader = new StreamReader(stream);
+        return ScanWithHeader(reader, options);
+    }
 
+    internal static FastStepScanResult ScanWithHeader(TextReader reader)
+    {
+        return ScanWithHeader(reader, FastStepScanOptions.Default);
+    }
+
+    internal static FastStepScanResult ScanWithHeader(TextReader reader, FastStepScanOptions options)
+    {
+        var header = StepHeaderReader.Read(reader);
+        var indexes = Scan(reader, options, out var diagnostics);
+        return new FastStepScanResult(indexes, header, diagnostics);
+    }
+
+    private static void IndexEntity(
+        FastStepIndexes indexes,
+        StepEntityToken entity,
+        FastStepScanDiagnostics diagnostics,
+        Dictionary<string, string> normalizedByRawType)
+    {
+        var pooledEntityType = indexes.StringPool.Intern(entity.EntityType);
+        var normalizedType = GetNormalizedType(indexes, pooledEntityType, normalizedByRawType);
+
+        indexes.NormalizedTypeByEntityId[entity.EntityId] = normalizedType;
+
+        if (diagnostics is not null)
+        {
+            diagnostics.EntityRawArguments[entity.EntityId] = entity.RawArguments;
+            diagnostics.EntityRanges[entity.EntityId] = new FastStepEntityRange(
+                entity.StatementStartOffset,
+                entity.StatementEndOffset,
+                entity.ArgumentsStartOffset,
+                entity.ArgumentsEndOffset);
+        }
+
+        IndexEntityIdentity(indexes, entity.EntityId, entity.RawArguments);
+        IndexKnownEntity(indexes, entity.EntityId, pooledEntityType, entity.RawArguments);
+    }
+
+    private static string GetNormalizedType(
+        FastStepIndexes indexes,
+        string entityType,
+        Dictionary<string, string> normalizedByRawType)
+    {
+        if (normalizedByRawType.TryGetValue(entityType, out var normalizedType))
+        {
+            return normalizedType;
+        }
+
+        normalizedType = indexes.StringPool.Intern(FastStepTypeNameNormalizer.Normalize(entityType));
+        normalizedByRawType[entityType] = normalizedType;
+        return normalizedType;
+    }
+
+    private static void IndexKnownEntity(FastStepIndexes indexes, int entityId, string entityType, string rawArguments)
+    {
         switch (entityType.ToUpperInvariant())
         {
             case "IFCPROJECT":
-                IndexProject(indexes, entityId, args);
+                IndexProject(indexes, entityId, rawArguments);
                 break;
             case "IFCRELAGGREGATES":
-                IndexRelation(indexes.DecompositionRelations, entityId, args, relatingArgIndex: 4, relatedArgIndex: 5);
+                IndexRelation(indexes.DecompositionRelations, entityId, rawArguments, relatingArgIndex: 4, relatedArgIndex: 5);
                 break;
             case "IFCRELCONTAINEDINSPATIALSTRUCTURE":
-                IndexRelation(indexes.ContainmentRelations, entityId, args, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexRelation(indexes.ContainmentRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
                 break;
             case "IFCRELDEFINESBYPROPERTIES":
-                IndexRelation(indexes.DefinesByPropertiesRelations, entityId, args, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexRelation(indexes.DefinesByPropertiesRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
                 break;
             case "IFCRELASSOCIATESMATERIAL":
-                IndexRelation(indexes.AssociatesMaterialRelations, entityId, args, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexRelation(indexes.AssociatesMaterialRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
                 break;
             case "IFCRELDEFINESBYTYPE":
-                IndexRelation(indexes.DefinesByTypeRelations, entityId, args, relatingArgIndex: 5, relatedArgIndex: 4);
+                IndexRelation(indexes.DefinesByTypeRelations, entityId, rawArguments, relatingArgIndex: 5, relatedArgIndex: 4);
                 break;
             case "IFCPROPERTYSET":
-                IndexPropertySet(indexes, entityId, args);
+                IndexPropertySet(indexes, entityId, rawArguments);
                 break;
         }
     }
 
-    private static void IndexProject(FastStepIndexes indexes, int entityId, IReadOnlyList<string> args)
+    private static void IndexProject(FastStepIndexes indexes, int entityId, string rawArguments)
     {
-        var globalId = args.Count > 0 ? StepParsingUtilities.ParseStepString(args[0]) : null;
-        var name = args.Count > 2 ? StepParsingUtilities.ParseStepString(args[2]) : null;
+        var rawArgumentsSpan = rawArguments.AsSpan();
+
+        var globalId = StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, 0, out var globalStart, out var globalLength)
+            ? StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(globalStart, globalLength))
+            : null;
+        var name = StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, 2, out var nameStart, out var nameLength)
+            ? StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(nameStart, nameLength))
+            : null;
 
         if (globalId is not null)
         {
@@ -125,14 +187,15 @@ internal static class StepEntityScanner
         indexes.Project = new FastStepProjectRecord(entityId, globalId, name);
     }
 
-    private static void IndexPropertySet(FastStepIndexes indexes, int entityId, IReadOnlyList<string> args)
+    private static void IndexPropertySet(FastStepIndexes indexes, int entityId, string rawArguments)
     {
-        if (args.Count == 0)
+        var rawArgumentsSpan = rawArguments.AsSpan();
+        if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, 0, out var globalStart, out var globalLength))
         {
             return;
         }
 
-        var globalId = StepParsingUtilities.ParseStepString(args[0]);
+        var globalId = StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(globalStart, globalLength));
         if (string.IsNullOrEmpty(globalId))
         {
             return;
@@ -144,22 +207,24 @@ internal static class StepEntityScanner
     private static void IndexRelation(
         List<FastStepRelationRecord> target,
         int relationId,
-        List<string> args,
+        string rawArguments,
         int relatingArgIndex,
         int relatedArgIndex)
     {
-        if (args.Count <= Math.Max(relatingArgIndex, relatedArgIndex))
+        var rawArgumentsSpan = rawArguments.AsSpan();
+        if (!StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, relatingArgIndex, out var relatingStart, out var relatingLength)
+            || !StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, relatedArgIndex, out var relatedStart, out var relatedLength))
         {
             return;
         }
 
-        var relatingId = StepParsingUtilities.ParseStepReference(args[relatingArgIndex]);
+        var relatingId = StepParsingUtilities.ParseStepReference(rawArgumentsSpan.Slice(relatingStart, relatingLength));
         if (relatingId is null)
         {
             return;
         }
 
-        var relatedIds = StepParsingUtilities.ParseStepReferenceList(args[relatedArgIndex]);
+        var relatedIds = StepParsingUtilities.ParseStepReferenceList(rawArgumentsSpan.Slice(relatedStart, relatedLength));
         if (relatedIds.Count == 0)
         {
             return;
@@ -168,20 +233,22 @@ internal static class StepEntityScanner
         target.Add(new FastStepRelationRecord(relationId, relatingId.Value, relatedIds));
     }
 
-    private static void IndexEntityIdentity(FastStepIndexes indexes, int entityId, IReadOnlyList<string> args)
+    private static void IndexEntityIdentity(FastStepIndexes indexes, int entityId, string rawArguments)
     {
-        if (args.Count > 0)
+        var rawArgumentsSpan = rawArguments.AsSpan();
+
+        if (StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, 0, out var globalStart, out var globalLength))
         {
-            var globalId = StepParsingUtilities.ParseStepString(args[0]);
+            var globalId = StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(globalStart, globalLength));
             if (!string.IsNullOrWhiteSpace(globalId))
             {
                 indexes.EntityGlobalIds[entityId] = indexes.StringPool.Intern(globalId);
             }
         }
 
-        if (args.Count > 2)
+        if (StepParsingUtilities.TryGetTopLevelArgumentBounds(rawArgumentsSpan, 2, out var nameStart, out var nameLength))
         {
-            var name = StepParsingUtilities.ParseStepString(args[2]);
+            var name = StepParsingUtilities.ParseStepString(rawArgumentsSpan.Slice(nameStart, nameLength));
             if (name is not null)
             {
                 indexes.EntityNames[entityId] = indexes.StringPool.Intern(name);
@@ -189,3 +256,5 @@ internal static class StepEntityScanner
         }
     }
 }
+
+internal readonly record struct FastStepScanResult(FastStepIndexes Indexes, FastStepHeader Header, FastStepScanDiagnostics Diagnostics);

@@ -28,7 +28,7 @@ public sealed class StepEntityScannerTests
         using var reader = new StringReader(step);
         var indexes = StepEntityScanner.Scan(reader);
 
-        Assert.Equal(7, indexes.Entities.Count);
+        Assert.Equal(7, indexes.NormalizedTypeByEntityId.Count);
 
         Assert.True(indexes.Project.HasValue);
         Assert.Equal("project-guid", indexes.Project.Value.GlobalId);
@@ -63,13 +63,16 @@ public sealed class StepEntityScannerTests
         const string step = "prefix #10=IFCPROJECT('guid',$,'Project Name',$,$,$,$,$,$); suffix";
 
         using var reader = new StringReader(step);
-        var indexes = StepEntityScanner.Scan(reader);
+        var indexes = StepEntityScanner.Scan(reader, new FastStepScanOptions(CaptureDiagnostics: true), out var diagnostics);
 
-        var range = indexes.EntityRanges[10];
+        Assert.NotNull(diagnostics);
+
+        var range = diagnostics.EntityRanges[10];
+        var rawArguments = diagnostics.EntityRawArguments[10];
         var statementStart = step.IndexOf("#10=IFCPROJECT", System.StringComparison.Ordinal);
         var statementEnd = step.IndexOf(';', statementStart) + 1;
         var argsStart = step.IndexOf('(', statementStart) + 1;
-        var argsEnd = argsStart + indexes.Entities[10].RawArguments.Length;
+        var argsEnd = argsStart + rawArguments.Length;
 
         Assert.Equal(statementStart, range.StatementStartOffset);
         Assert.Equal(statementEnd, range.StatementEndOffset);
@@ -77,7 +80,7 @@ public sealed class StepEntityScannerTests
         Assert.Equal(argsEnd, range.ArgumentsEndOffset);
 
         var argsSlice = step[range.ArgumentsStartOffset..range.ArgumentsEndOffset];
-        Assert.Equal(indexes.Entities[10].RawArguments, argsSlice);
+        Assert.Equal(rawArguments, argsSlice);
     }
 
     [Fact]
@@ -94,7 +97,32 @@ public sealed class StepEntityScannerTests
         var indexes = StepEntityScanner.Scan(reader);
 
         Assert.True(object.ReferenceEquals(indexes.EntityNames[10], indexes.EntityNames[11]));
-        Assert.True(object.ReferenceEquals(indexes.Entities[12].EntityType, indexes.Entities[13].EntityType));
+        Assert.True(object.ReferenceEquals(indexes.NormalizedTypeByEntityId[12], indexes.NormalizedTypeByEntityId[13]));
+    }
+
+    [Fact]
+    public void ScanWithHeader_ReadsHeaderAndEntities_FromSingleReader()
+    {
+        const string step = """
+        ISO-10303-21;
+        HEADER;
+        FILE_NAME('fixture.ifc','2024-01-01T00:00:00',('author'),('org'),'app','system','auth');
+        FILE_SCHEMA(('IFC4'));
+        ENDSEC;
+        DATA;
+        #10=IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        using var reader = new StringReader(step);
+        var scanResult = StepEntityScanner.ScanWithHeader(reader);
+
+        Assert.Equal("IFC4", scanResult.Header.Schema);
+        Assert.Equal("2024-01-01T00:00:00", scanResult.Header.CreatedAt);
+        Assert.Equal("author", scanResult.Header.Author);
+        Assert.True(scanResult.Indexes.Project.HasValue);
+        Assert.Equal("project-guid", scanResult.Indexes.Project.Value.GlobalId);
     }
 
     [Fact]

@@ -257,10 +257,14 @@ internal static class Program
         }
     }
 
-    private static bool TryParseProgressMode(string value, out ProgressMode progressMode)
+        private static bool TryParseProgressMode(string value, out ProgressMode progressMode)
     {
         switch (value.Trim().ToLowerInvariant())
         {
+            case "none":
+            case "off":
+                progressMode = ProgressMode.None;
+                return true;
             case "completed":
                 progressMode = ProgressMode.Completed;
                 return true;
@@ -275,7 +279,13 @@ internal static class Program
 
     private static Action<int, int> CreateProgressReporter(ProgressMode progressMode)
     {
+        if (progressMode == ProgressMode.None)
+        {
+            return null;
+        }
+
         var lastPercent = int.MinValue;
+
 
         return (processed, total) =>
         {
@@ -405,7 +415,7 @@ internal static class Program
         Console.WriteLine("Please specify the path to the IFC and optional output json.");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [/path_to_file.json] [--preserve-order true|false]");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc --no-preserve-order");
-        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
+        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
         Console.WriteLine("Default: preserve order is true.");
         Console.WriteLine($"Default output buffer: {IfcStreamingJsonExporter.DefaultOutputFileBufferSize / 1024} KB.");
         Console.WriteLine("Default write-through: disabled.");
@@ -422,8 +432,9 @@ internal static class Program
         Detailed,
     }
 
-    private enum ProgressMode
+        private enum ProgressMode
     {
+        None,
         Completed,
         Remaining,
     }

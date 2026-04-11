@@ -1,6 +1,30 @@
 # Changelog
 
+## [1.19.0] - 2026-04-11 15:40
+
+### Summary
+- Reworked fast-step scan/export internals to reduce retained runtime indexing data and remove duplicate traversal/count/relation buffers.
+- Added optional progress suppression mode for CLI runs (`--progress none|off`) to allow timing without console progress output.
+- Rolled back lexer micro-optimizations that degraded wall-clock performance while preserving earlier structural memory optimizations.
+
+### Added
+- Added CLI progress mode values `none|off` to disable progress output in `src/Program.cs`.
+
+### Changed
+- Updated fast-step indexing model in `src/FastStep/FastStepIndexes.cs` and scanner flow in `src/FastStep/StepEntityScanner.cs`:
+  - runtime index now stores normalized type map by entity id;
+  - diagnostic-only payload (`EntityRawArguments`, `EntityRanges`) is captured via `FastStepScanOptions(CaptureDiagnostics)`.
+- Updated `src/FastStep/FastStepJsonEmitter.cs` to emit from last-node mapping and relation grouping without duplicate traversal/count buffers.
+- Updated `src/FastStep/FastStepMappingCache.cs` to consume precomputed normalized type map from indexes.
+- Updated `src/FastStep/StepHeaderReader.cs` and `src/FastStepJsonExporter.cs` to read header + entities from a single reader pass.
+- Updated `README.md` CLI contract/progress documentation for `--progress [none|completed|remaining]`.
+- Updated project version to `1.19.0` in `src/ifc-metadata.csproj`.
+
+### Fixed
+- Fixed fast-step performance regression by reverting high-overhead lexer argument-tracking path and keeping the simpler streaming lexer/token model.
+
 ## [1.18.0] - 2026-04-11 00:37
+
 
 ### Summary
 - Added fast-step engine execution diagnostics with explicit requested/effective engine reporting and fallback reason/counters in detailed CLI output.

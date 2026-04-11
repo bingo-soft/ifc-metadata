@@ -53,21 +53,7 @@ internal sealed class FastStepMappingCache
 
     private static Dictionary<int, string> BuildNormalizedTypeMap(FastStepIndexes indexes)
     {
-        var normalizedByEntityId = new Dictionary<int, string>();
-        var normalizedByRawType = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        foreach (var (entityId, entity) in indexes.Entities)
-        {
-            if (!normalizedByRawType.TryGetValue(entity.EntityType, out var normalizedType))
-            {
-                normalizedType = indexes.StringPool.Intern(FastStepTypeNameNormalizer.Normalize(entity.EntityType));
-                normalizedByRawType[entity.EntityType] = normalizedType;
-            }
-
-            normalizedByEntityId[entityId] = normalizedType;
-        }
-
-        return normalizedByEntityId;
+        return indexes.NormalizedTypeByEntityId;
     }
 
     private static Dictionary<int, List<string>> BuildPropertySetMap(FastStepIndexes indexes)

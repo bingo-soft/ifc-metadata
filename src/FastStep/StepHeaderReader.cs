@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 
 namespace Bingosoft.Net.IfcMetadata.FastStep;
 
@@ -7,8 +8,54 @@ internal static class StepHeaderReader
 {
     internal static FastStepHeader Read(FileInfo ifcSourceFile)
     {
-        var content = File.ReadAllText(ifcSourceFile.FullName);
+        using var stream = ifcSourceFile.OpenRead();
+        using var reader = new StreamReader(stream);
+        return Read(reader);
+    }
 
+    internal static FastStepHeader Read(TextReader reader)
+    {
+        var content = ReadHeaderSection(reader);
+        return ParseHeaderContent(content);
+    }
+
+    internal static string ReadHeaderSection(TextReader reader)
+    {
+        var headerBuilder = new StringBuilder(1024);
+        var inHeaderSection = false;
+
+        while (true)
+        {
+            var line = reader.ReadLine();
+            if (line is null)
+            {
+                break;
+            }
+
+            var trimmedLine = line.Trim();
+            if (!inHeaderSection)
+            {
+                if (!trimmedLine.Equals("HEADER;", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                inHeaderSection = true;
+            }
+
+            headerBuilder.AppendLine(line);
+
+            if (trimmedLine.Equals("ENDSEC;", StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+        }
+
+        return headerBuilder.ToString();
+    }
+
+    private static FastStepHeader ParseHeaderContent(string content)
+    {
         var fileNameArgs = ReadHeaderArguments(content, "FILE_NAME");
         var fileSchemaArgs = ReadHeaderArguments(content, "FILE_SCHEMA");
 
@@ -33,7 +80,11 @@ internal static class StepHeaderReader
             }
         }
 
-        if (fileSchemaArgs.Count <= 0) return new FastStepHeader(author, createdAt, schema, creatingApplication);
+        if (fileSchemaArgs.Count <= 0)
+        {
+            return new FastStepHeader(author, createdAt, schema, creatingApplication);
+        }
+
         var schemas = StepParsingUtilities.ParseStepStringList(fileSchemaArgs[0]);
         if (schemas.Count > 0)
         {

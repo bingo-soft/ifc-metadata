@@ -28,9 +28,9 @@ internal static class FastStepJsonEmitter
         }
 
         var project = indexes.Project.Value;
-        var traversal = BuildTraversal(indexes, project, preserveOrder);
-        var counts = BuildObjectIdCounts(traversal);
-        var uniqueMetaObjects = counts.Count;
+        var relationMaps = BuildRelationMaps(indexes);
+        var lastNodesByObjectId = BuildLastNodesByObjectId(indexes, project, preserveOrder, relationMaps, out var lastVisitOrderByObjectId);
+        var uniqueMetaObjects = lastNodesByObjectId.Count;
 
         var mappings = FastStepMappingCache.Build(indexes);
 
@@ -49,22 +49,13 @@ internal static class FastStepJsonEmitter
         var processedMetaObjects = 0;
         progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
-        for (var i = 0; i < traversal.Count; i++)
+        List<string> orderedObjectIds = [.. lastNodesByObjectId.Keys];
+        orderedObjectIds.Sort((left, right) => lastVisitOrderByObjectId[left].CompareTo(lastVisitOrderByObjectId[right]));
+
+        for (var i = 0; i < orderedObjectIds.Count; i++)
         {
-            var node = traversal[i];
-            if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
-            {
-                continue;
-            }
-
-            remaining--;
-            if (remaining > 0)
-            {
-                counts[node.ObjectId] = remaining;
-                continue;
-            }
-
-            counts.Remove(node.ObjectId);
+            var objectId = orderedObjectIds[i];
+            var node = lastNodesByObjectId[objectId];
             WriteMetaObject(writer, indexes, mappings, project, node);
 
             processedMetaObjects++;
@@ -79,44 +70,57 @@ internal static class FastStepJsonEmitter
         return new IfcExportReport(header.Schema, uniqueMetaObjects);
     }
 
-    private static List<FastStepTraversalNode> BuildTraversal(FastStepIndexes indexes, FastStepProjectRecord project, bool preserveOrder)
+    private static FastStepRelationMaps BuildRelationMaps(FastStepIndexes indexes)
     {
-        var decompositionMap = BuildRelationMap(indexes.DecompositionRelations);
-        var containmentMap = BuildRelationMap(indexes.ContainmentRelations);
+        return new FastStepRelationMaps(
+            BuildRelationMap(indexes.DecompositionRelations),
+            BuildRelationMap(indexes.ContainmentRelations));
+    }
 
+    private static Dictionary<string, FastStepTraversalNode> BuildLastNodesByObjectId(
+        FastStepIndexes indexes,
+        FastStepProjectRecord project,
+        bool preserveOrder,
+        FastStepRelationMaps relationMaps,
+        out Dictionary<string, int> lastVisitOrderByObjectId)
+    {
         var stack = new Stack<FastStepTraversalNode>();
-        var traversal = new List<FastStepTraversalNode>();
+        var lastNodesByObjectId = new Dictionary<string, FastStepTraversalNode>(StringComparer.Ordinal);
+        lastVisitOrderByObjectId = new Dictionary<string, int>(StringComparer.Ordinal);
 
+        var visitOrder = 0;
         stack.Push(new FastStepTraversalNode(project.EntityId, project.GlobalId, null));
 
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            traversal.Add(current);
+            if (!string.IsNullOrWhiteSpace(current.ObjectId))
+            {
+                lastNodesByObjectId[current.ObjectId] = current;
+                lastVisitOrderByObjectId[current.ObjectId] = visitOrder;
+                visitOrder++;
+            }
 
-            PushChildren(stack, indexes, decompositionMap, current, preserveOrder);
-            PushChildren(stack, indexes, containmentMap, current, preserveOrder);
+            PushChildren(stack, indexes, relationMaps.DecompositionMap, current, preserveOrder);
+            PushChildren(stack, indexes, relationMaps.ContainmentMap, current, preserveOrder);
         }
 
-        return traversal;
+        return lastNodesByObjectId;
     }
 
-    private static Dictionary<int, List<int>> BuildRelationMap(List<FastStepRelationRecord> relations)
+    private static Dictionary<int, List<FastStepRelationRecord>> BuildRelationMap(List<FastStepRelationRecord> relations)
     {
-        var map = new Dictionary<int, List<int>>();
+        var map = new Dictionary<int, List<FastStepRelationRecord>>();
 
         foreach (var relation in relations)
         {
-            if (!map.TryGetValue(relation.RelatingId, out var children))
+            if (!map.TryGetValue(relation.RelatingId, out var groupedRelations))
             {
-                children = [];
-                map[relation.RelatingId] = children;
+                groupedRelations = [];
+                map[relation.RelatingId] = groupedRelations;
             }
 
-            for (var i = 0; i < relation.RelatedIds.Count; i++)
-            {
-                children.Add(relation.RelatedIds[i]);
-            }
+            groupedRelations.Add(relation);
         }
 
         return map;
@@ -125,21 +129,41 @@ internal static class FastStepJsonEmitter
     private static void PushChildren(
         Stack<FastStepTraversalNode> stack,
         FastStepIndexes indexes,
-        Dictionary<int, List<int>> relationMap,
+        Dictionary<int, List<FastStepRelationRecord>> relationMap,
         FastStepTraversalNode current,
         bool preserveOrder)
     {
-        if (!relationMap.TryGetValue(current.EntityId, out var children) || children.Count == 0)
+        if (!relationMap.TryGetValue(current.EntityId, out var groupedRelations) || groupedRelations.Count == 0)
         {
             return;
         }
 
-        var childIds = new List<int>(children);
-
-        if (preserveOrder)
+        if (!preserveOrder)
         {
-            childIds.Sort((left, right) => StringComparer.Ordinal.Compare(GetGlobalId(indexes, left), GetGlobalId(indexes, right)));
+            for (var relationIndex = groupedRelations.Count - 1; relationIndex >= 0; relationIndex--)
+            {
+                var relation = groupedRelations[relationIndex];
+                for (var childIndex = relation.RelatedIds.Count - 1; childIndex >= 0; childIndex--)
+                {
+                    var childId = relation.RelatedIds[childIndex];
+                    stack.Push(new FastStepTraversalNode(childId, GetGlobalId(indexes, childId), current.ObjectId));
+                }
+            }
+
+            return;
         }
+
+        var childIds = new List<int>();
+        for (var relationIndex = 0; relationIndex < groupedRelations.Count; relationIndex++)
+        {
+            var relation = groupedRelations[relationIndex];
+            for (var childIndex = 0; childIndex < relation.RelatedIds.Count; childIndex++)
+            {
+                childIds.Add(relation.RelatedIds[childIndex]);
+            }
+        }
+
+        childIds.Sort((left, right) => StringComparer.Ordinal.Compare(GetGlobalId(indexes, left), GetGlobalId(indexes, right)));
 
         for (var i = childIds.Count - 1; i >= 0; i--)
         {
@@ -148,24 +172,6 @@ internal static class FastStepJsonEmitter
         }
     }
 
-    private static Dictionary<string, int> BuildObjectIdCounts(List<FastStepTraversalNode> traversal)
-    {
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-
-        for (var i = 0; i < traversal.Count; i++)
-        {
-            var objectId = traversal[i].ObjectId;
-            if (string.IsNullOrWhiteSpace(objectId))
-            {
-                continue;
-            }
-
-            counts.TryGetValue(objectId, out var currentCount);
-            counts[objectId] = currentCount + 1;
-        }
-
-        return counts;
-    }
 
     private static void WriteMetaObject(
         Utf8JsonWriter writer,
@@ -235,4 +241,8 @@ internal static class FastStepJsonEmitter
     }
 
     private readonly record struct FastStepTraversalNode(int EntityId, string ObjectId, string ParentObjectId);
+
+    private readonly record struct FastStepRelationMaps(
+        Dictionary<int, List<FastStepRelationRecord>> DecompositionMap,
+        Dictionary<int, List<FastStepRelationRecord>> ContainmentMap);
 }

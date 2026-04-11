@@ -6,9 +6,7 @@ internal sealed class FastStepIndexes
 {
     internal FastStepStringPool StringPool { get; } = new();
 
-    internal Dictionary<int, FastStepEntityRecord> Entities { get; } = new();
-
-    internal Dictionary<int, FastStepEntityRange> EntityRanges { get; } = new();
+    internal Dictionary<int, string> NormalizedTypeByEntityId { get; } = new();
 
     internal Dictionary<int, string> EntityGlobalIds { get; } = new();
 
@@ -29,13 +27,23 @@ internal sealed class FastStepIndexes
     internal FastStepProjectRecord? Project { get; set; }
 }
 
-internal readonly record struct FastStepEntityRecord(int EntityId, string EntityType, string RawArguments);
+internal sealed class FastStepScanDiagnostics
+{
+    internal Dictionary<int, FastStepEntityRange> EntityRanges { get; } = new();
+
+    internal Dictionary<int, string> EntityRawArguments { get; } = new();
+}
 
 internal readonly record struct FastStepEntityRange(
     int StatementStartOffset,
     int StatementEndOffset,
     int ArgumentsStartOffset,
     int ArgumentsEndOffset);
+
+internal readonly record struct FastStepScanOptions(bool CaptureDiagnostics)
+{
+    internal static readonly FastStepScanOptions Default = new(CaptureDiagnostics: false);
+}
 
 internal readonly record struct FastStepRelationRecord(int RelationId, int RelatingId, IReadOnlyList<int> RelatedIds);
 
