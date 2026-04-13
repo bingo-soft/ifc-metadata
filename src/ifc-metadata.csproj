@@ -17,13 +17,31 @@
 		<ImplicitUsings>disable</ImplicitUsings>
 		<Nullable>disable</Nullable>
 	</PropertyGroup>
+
 	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
 		<NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Release'">
 		<NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
+		<SelfContained>true</SelfContained>
+		<RuntimeIdentifier Condition="'$(RuntimeIdentifier)'==''">win-x64</RuntimeIdentifier>
+		<PublishSingleFile>true</PublishSingleFile>
+		<PublishTrimmed>true</PublishTrimmed>
+		<TrimMode>full</TrimMode>
+		<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+		<PublishReadyToRun>false</PublishReadyToRun>
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<StackTraceSupport>false</StackTraceSupport>
+		<DebuggerSupport>false</DebuggerSupport>
+		<EventSourceSupport>false</EventSourceSupport>
+		<MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+		<SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
+		<TrimmerSingleWarn>false</TrimmerSingleWarn>
 	</PropertyGroup>
+
 	<ItemGroup>
 		<PackageReference Include="Xbim.Essentials" Version="6.0.587" />
 	</ItemGroup>
@@ -41,4 +59,12 @@
 		</AssemblyAttribute>
 	</ItemGroup>
 </Project>
+
+
+
+
+
+
+
+
 

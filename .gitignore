@@ -6,3 +6,5 @@ src/Properties/
 **/obj/
 
 ifc/
+artifacts/
+docs/trimmer-checklist.md

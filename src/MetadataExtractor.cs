@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 using Xbim.Ifc;
 using Xbim.Ifc4.Interfaces;
-using Xbim.Ifc4.MaterialResource;
+
 
 namespace Bingosoft.Net.IfcMetadata;
 
@@ -198,60 +198,7 @@ internal sealed class MetadataExtractor
         ExtractRelatedObjects(objectDefinition, metaObjects, parentObject.Id);
     }
 
-    private static string[] GetMaterials(IIfcObjectDefinition objectDefinition)
-    {
-        var material = objectDefinition.GetType().GetProperty("Material");
-        if (material == null)
-        {
-            return [];
-        }
-
-        var materialsv = material.GetValue(objectDefinition);
-        if (materialsv == null)
-        {
-            return [];
-        }
-
-        var materials = materialsv.GetType().GetProperty("Materials");
-        if (materials != null)
-        {
-            var maters = materials.GetValue(materialsv);
-            switch (maters)
-            {
-                case Xbim.Ifc4.ItemSet<IfcMaterial> mat1:
-                    {
-                        var materoalList = new List<string>(mat1.Count);
-                        foreach (var item in mat1)
-                        {
-                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                        }
-
-                        return materoalList.ToArray();
-                    }
-
-                case Xbim.Ifc2x3.ItemSet<Xbim.Ifc2x3.MaterialResource.IfcMaterial> mat2:
-                    {
-                        var materoalList = new List<string>(mat2.Count);
-                        foreach (var item in mat2)
-                        {
-                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                        }
-
-                        return materoalList.ToArray();
-                    }
-
-                default:
-                    return [];
-            }
-        }
-
-        return materialsv switch
-        {
-            IfcMaterial material4 => [$"IfcMaterial_{material4.EntityLabel}"],
-            Xbim.Ifc2x3.MaterialResource.IfcMaterial material2x3 => [$"IfcMaterial_{material2x3.EntityLabel}"],
-            _ => [],
-        };
-    }
+    
 
     private static void ExtractRelatedObjects(IIfcObjectDefinition objectDefinition, List<Metadata> metaObjects, string parentObjId)
     {

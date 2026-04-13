@@ -2,9 +2,11 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
+
 
 using Xbim.Common;
 using Xbim.Ifc4.Interfaces;
@@ -473,9 +475,12 @@ internal static class IfcAccessorDelegateCache
             CreateGetter(t, "EntityLabel")));
     }
 
+            
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "Fallback accessors are resolved from runtime IFC entity properties.")]
     private static Func<object, object> CreateGetter(Type type, string propertyName)
     {
         var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+
         if (property is null || property.GetIndexParameters().Length > 0)
         {
             return null;

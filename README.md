@@ -130,17 +130,22 @@ dotnet run --project src/ifc-metadata.csproj -- ./path/to/source.ifc
 
 ## Publish
 
-Production self-contained publish (single-file, TieredPGO, ReadyToRun):
+Self-contained single-file publish with maximum size reduction (trim + compression):
 
 ```bash
-dotnet publish ./src/ifc-metadata.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:TieredPGO=true -p:ReadyToRun=true -p:PublishReadyToRun=true -p:PublishReadyToRunComposite=true
+dotnet publish ./src/ifc-metadata.csproj -c Release -r win-x64
 
-dotnet publish ./src/ifc-metadata.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:TieredPGO=true -p:ReadyToRun=true -p:PublishReadyToRun=true -p:PublishReadyToRunComposite=true
+dotnet publish ./src/ifc-metadata.csproj -c Release -r linux-x64
 ```
+
+Trimmer stabilization checklist:
+- `docs/trimmer-checklist.md`
+
 
 Published executable names:
 - Windows: `ifc-metadata-v2.exe`
 - Linux: `ifc-metadata-v2`
+
 
 ## CLI contract
 
