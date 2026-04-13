@@ -148,13 +148,22 @@ internal static class StepParsingUtilities
             return null;
         }
 
-        if (trimmed.Length < 2 || trimmed[0] != '\'' || trimmed[^1] != '\'')
+        var isQuoted = trimmed.Length >= 2 && trimmed[0] == '\'' && trimmed[^1] == '\'';
+        var content = isQuoted ? trimmed[1..^1] : trimmed;
+
+        if (isQuoted)
         {
-            return DecodeStepEscapes(trimmed.ToString());
+            if (content.IndexOfAny('\\', '\'') < 0)
+            {
+                return content.ToString();
+            }
+
+            return DecodeStepEscapes(content, decodeDoubledQuotes: true);
         }
 
-        var unescaped = trimmed[1..^1].ToString().Replace("''", "'", StringComparison.Ordinal);
-        return DecodeStepEscapes(unescaped);
+        return content.IndexOf('\\') < 0
+            ? content.ToString()
+            : DecodeStepEscapes(content, decodeDoubledQuotes: false);
     }
 
     internal static int? ParseStepReference(string token)
@@ -193,20 +202,44 @@ internal static class StepParsingUtilities
         }
 
         var inner = trimmed[1..^1];
-        var result = new List<int>();
-        var argumentIndex = 0;
-
-        while (TryGetTopLevelArgumentBounds(inner, argumentIndex, out var tokenStart, out var tokenLength))
+        if (inner.IsEmpty)
         {
-            var reference = ParseStepReference(inner.Slice(tokenStart, tokenLength));
-            if (reference is not null)
-            {
-                result.Add(reference.Value);
-            }
-
-            argumentIndex++;
+            return [];
         }
 
+        var result = new List<int>();
+        var depth = 0;
+        var inString = false;
+        var tokenStart = 0;
+
+        for (var i = 0; i < inner.Length; i++)
+        {
+            var ch = inner[i];
+            switch (ch)
+            {
+                case '\'':
+                    if (inString && i + 1 < inner.Length && inner[i + 1] == '\'')
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    inString = !inString;
+                    break;
+                case '(' when !inString:
+                    depth++;
+                    break;
+                case ')' when !inString:
+                    depth--;
+                    break;
+                case ',' when !inString && depth == 0:
+                    AppendReferenceToken(inner, tokenStart, i, result);
+                    tokenStart = i + 1;
+                    break;
+            }
+        }
+
+        AppendReferenceToken(inner, tokenStart, inner.Length, result);
         return result;
     }
 
@@ -232,6 +265,20 @@ internal static class StepParsingUtilities
         }
 
         return result;
+    }
+
+    private static void AppendReferenceToken(ReadOnlySpan<char> source, int start, int exclusiveEnd, List<int> result)
+    {
+        if (!TryBuildTrimmedTokenBounds(source, start, exclusiveEnd, out var tokenStart, out var tokenLength) || tokenLength == 0)
+        {
+            return;
+        }
+
+        var reference = ParseStepReference(source.Slice(tokenStart, tokenLength));
+        if (reference is not null)
+        {
+            result.Add(reference.Value);
+        }
     }
 
     private static ReadOnlySpan<char> TrimSpan(ReadOnlySpan<char> value)
@@ -284,76 +331,175 @@ internal static class StepParsingUtilities
         return true;
     }
 
-    private static string DecodeStepEscapes(string value)
+    private static string DecodeStepEscapes(ReadOnlySpan<char> value, bool decodeDoubledQuotes)
     {
-        if (string.IsNullOrEmpty(value) || value.IndexOf("\\X", StringComparison.OrdinalIgnoreCase) < 0)
+        if (value.IsEmpty)
         {
-            return value;
+            return string.Empty;
         }
 
-        var builder = new StringBuilder(value.Length);
+        StringBuilder builder = null;
 
         for (var i = 0; i < value.Length;)
         {
+            if (decodeDoubledQuotes
+                && i + 1 < value.Length
+                && value[i] == '\''
+                && value[i + 1] == '\'')
+            {
+                EnsureBuilder(ref builder, value, i);
+                builder.Append('\'');
+                i += 2;
+                continue;
+            }
+
             if (i + 3 < value.Length
                 && value[i] == '\\'
-                && (value[i + 1] == 'X' || value[i + 1] == 'x')
+                && IsX(value[i + 1])
                 && value[i + 2] == '2'
                 && value[i + 3] == '\\')
             {
-                var start = i + 4;
-                var endMarker = value.IndexOf(@"\X0\", start, StringComparison.OrdinalIgnoreCase);
-                if (endMarker > start)
+                var utf16Start = i + 4;
+                if (TryFindUtf16EndMarker(value, utf16Start, out var utf16End) && utf16End > utf16Start)
                 {
-                    var hex = value[start..endMarker];
-                    builder.Append(DecodeUtf16Hex(hex));
-                    i = endMarker + 4;
+                    EnsureBuilder(ref builder, value, i);
+
+                    var hexChunk = value.Slice(utf16Start, utf16End - utf16Start);
+                    if (!TryAppendUtf16Hex(builder, hexChunk))
+                    {
+                        builder.Append(hexChunk);
+                    }
+
+                    i = utf16End + 4;
                     continue;
                 }
             }
 
-            if (i + 4 < value.Length
+            if (i + 5 < value.Length
                 && value[i] == '\\'
-                && (value[i + 1] == 'X' || value[i + 1] == 'x')
-                && value[i + 2] == '\\')
+                && IsX(value[i + 1])
+                && value[i + 2] == '\\'
+                && value[i + 5] == '\\'
+                && TryParseHexByte(value[i + 3], value[i + 4], out var escapedByte))
             {
-                var hexByte = value.Substring(i + 3, 2);
-                if (byte.TryParse(hexByte, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)
-                    && i + 5 < value.Length
-                    && value[i + 5] == '\\')
-                {
-                    builder.Append((char)b);
-                    i += 6;
-                    continue;
-                }
+                EnsureBuilder(ref builder, value, i);
+                builder.Append((char)escapedByte);
+                i += 6;
+                continue;
             }
 
-            builder.Append(value[i]);
+            if (builder is not null)
+            {
+                builder.Append(value[i]);
+            }
+
             i++;
         }
 
-        return builder.ToString();
+        return builder is null ? value.ToString() : builder.ToString();
     }
 
-    private static string DecodeUtf16Hex(string hex)
+    private static bool TryFindUtf16EndMarker(ReadOnlySpan<char> value, int startIndex, out int markerIndex)
     {
-        if (string.IsNullOrEmpty(hex) || hex.Length % 4 != 0)
+        for (var i = startIndex; i + 3 < value.Length; i++)
         {
-            return hex;
+            if (value[i] == '\\'
+                && IsX(value[i + 1])
+                && value[i + 2] == '0'
+                && value[i + 3] == '\\')
+            {
+                markerIndex = i;
+                return true;
+            }
         }
 
-        var builder = new StringBuilder(hex.Length / 4);
+        markerIndex = -1;
+        return false;
+    }
+
+    private static bool TryAppendUtf16Hex(StringBuilder builder, ReadOnlySpan<char> hex)
+    {
+        if (hex.IsEmpty || hex.Length % 4 != 0)
+        {
+            return false;
+        }
+
         for (var i = 0; i < hex.Length; i += 4)
         {
-            var chunk = hex.Substring(i, 4);
-            if (!ushort.TryParse(chunk, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var codeUnit))
+            if (!TryParseHexWord(hex.Slice(i, 4), out var codeUnit))
             {
-                return hex;
+                return false;
             }
 
             builder.Append((char)codeUnit);
         }
 
-        return builder.ToString();
+        return true;
+    }
+
+    private static bool TryParseHexByte(char high, char low, out byte value)
+    {
+        if (TryParseHexNibble(high, out var highNibble) && TryParseHexNibble(low, out var lowNibble))
+        {
+            value = (byte)((highNibble << 4) | lowNibble);
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryParseHexWord(ReadOnlySpan<char> chunk, out ushort value)
+    {
+        if (chunk.Length != 4)
+        {
+            value = 0;
+            return false;
+        }
+
+        if (TryParseHexNibble(chunk[0], out var n0)
+            && TryParseHexNibble(chunk[1], out var n1)
+            && TryParseHexNibble(chunk[2], out var n2)
+            && TryParseHexNibble(chunk[3], out var n3))
+        {
+            value = (ushort)((n0 << 12) | (n1 << 8) | (n2 << 4) | n3);
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryParseHexNibble(char value, out int nibble)
+    {
+        nibble = value switch
+        {
+            >= '0' and <= '9' => value - '0',
+            >= 'a' and <= 'f' => value - 'a' + 10,
+            >= 'A' and <= 'F' => value - 'A' + 10,
+            _ => -1,
+        };
+
+        return nibble >= 0;
+    }
+
+    private static bool IsX(char value)
+    {
+        return value is 'X' or 'x';
+    }
+
+    private static void EnsureBuilder(ref StringBuilder builder, ReadOnlySpan<char> source, int copyLength)
+    {
+        if (builder is not null)
+        {
+            return;
+        }
+
+        builder = new StringBuilder(source.Length);
+        if (copyLength > 0)
+        {
+            builder.Append(source[..copyLength]);
+        }
     }
 }
+

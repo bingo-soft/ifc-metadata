@@ -1,6 +1,32 @@
 # Changelog
 
+## [1.25.0] - 2026-04-13 12:48
+
+### Summary
+- Reduced fast-step string parsing allocations by adding span-first fast paths and escape decoding without intermediate substring materialization.
+- Reduced preserve-order traversal overhead in fast-step JSON emitter via pooled child sort buffers and per-traversal GlobalId caching.
+- Added tests for STEP string/reference parsing behavior after parser refactoring.
+
+### Added
+- Added `tests/StepParsingUtilitiesTests.cs` with coverage for:
+  - plain quoted STEP strings;
+  - doubled-quote escape decode;
+  - `\X\hh\` and `\X2\....\X0\` escape decode;
+  - top-level reference list parsing.
+
+### Changed
+- Updated `src/FastStep/StepParsingUtilities.cs`:
+  - `ParseStepString(ReadOnlySpan<char>)` now uses explicit fast paths for non-escaped tokens;
+  - replaced repeated index-based token extraction in `ParseStepReferenceList` with single-pass span scanning;
+  - switched escape decoding helpers to span-based parsing with delayed `StringBuilder` allocation.
+- Updated `src/FastStep/FastStepJsonEmitter.cs`:
+  - `PushChildren` now uses `ArrayPool<ChildSortEntry>` instead of per-node `List<int>`;
+  - preserve-order sorting now compares precomputed child keys;
+  - added traversal-scope `GlobalId` cache to reduce repeated lookups/string decoding.
+- Updated project version to `1.25.0` in `src/ifc-metadata.csproj`.
+
 ## [1.24.0] - 2026-04-13 11:00
+
 
 ### Summary
 - Switched Release publish configuration to the compact `small` profile for minimum single-file size.

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Encodings.Web;
@@ -13,6 +14,9 @@ internal static class FastStepJsonEmitter
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
+
+    private static readonly IComparer<ChildSortEntry> ChildSortEntryComparer = Comparer<ChildSortEntry>.Create(
+        static (left, right) => StringComparer.Ordinal.Compare(left.GlobalId, right.GlobalId));
 
     internal static IfcExportReport Export(
         FastStepIndexes indexes,
@@ -122,7 +126,7 @@ internal static class FastStepJsonEmitter
         const int emitBatchSize = 4096;
         foreach (var record in intermediateReader.EnumerateObjectRecords())
         {
-            if (!TryGetGlobalIdToken(indexes, intermediateReader, record.EntityId, out var objectToken)
+            if (!TryGetGlobalIdToken(indexes, intermediateReader, record.EntityId, cache: null, out var objectToken)
                 || !lastOrderByObjectToken.TryGetValue(objectToken, out var lastOrder)
                 || lastOrder != record.OutputOrder)
             {
@@ -163,6 +167,7 @@ internal static class FastStepJsonEmitter
     {
         var stack = new Stack<FastStepTraversalNode>();
         var lastOrderByObjectToken = new Dictionary<ulong, int>();
+        var globalIdCache = new Dictionary<int, string>();
 
         using var objectStore = new FastStepMmfObjectStore(intermediateReader.DirectoryPath);
         var visitOrder = 0;
@@ -171,7 +176,7 @@ internal static class FastStepJsonEmitter
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            if (TryGetGlobalIdToken(indexes, intermediateReader, current.EntityId, out var objectToken))
+            if (TryGetGlobalIdToken(indexes, intermediateReader, current.EntityId, globalIdCache, out var objectToken))
             {
                 lastOrderByObjectToken[objectToken] = visitOrder;
                 objectStore.Append(new FastStepObjectRecord
@@ -189,8 +194,8 @@ internal static class FastStepJsonEmitter
                 visitOrder++;
             }
 
-            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder, intermediateReader);
-            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder, intermediateReader);
+            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder, intermediateReader, globalIdCache);
+            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder, intermediateReader, globalIdCache);
         }
 
         return lastOrderByObjectToken;
@@ -206,6 +211,7 @@ internal static class FastStepJsonEmitter
         var stack = new Stack<FastStepTraversalNode>();
         var orderByObjectToken = new Dictionary<ulong, int>();
         var nodesByOrder = new SortedDictionary<int, FastStepTraversalNode>();
+        var globalIdCache = new Dictionary<int, string>();
         var visitOrder = 0;
 
         stack.Push(new FastStepTraversalNode(project.EntityId, ParentEntityId: -1));
@@ -213,7 +219,7 @@ internal static class FastStepJsonEmitter
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            if (TryGetGlobalIdToken(indexes, intermediateReader, current.EntityId, out var objectToken))
+            if (TryGetGlobalIdToken(indexes, intermediateReader, current.EntityId, globalIdCache, out var objectToken))
             {
                 if (orderByObjectToken.TryGetValue(objectToken, out var previousOrder))
                 {
@@ -225,8 +231,8 @@ internal static class FastStepJsonEmitter
                 visitOrder++;
             }
 
-            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder, intermediateReader);
-            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder, intermediateReader);
+            PushChildren(stack, indexes, relationAdjacency.Decomposition, current, preserveOrder, intermediateReader, globalIdCache);
+            PushChildren(stack, indexes, relationAdjacency.Containment, current, preserveOrder, intermediateReader, globalIdCache);
         }
 
         return nodesByOrder;
@@ -247,7 +253,8 @@ internal static class FastStepJsonEmitter
         FastStepAdjacency adjacency,
         FastStepTraversalNode current,
         bool preserveOrder,
-        FastStepMmfIntermediateReader intermediateReader)
+        FastStepMmfIntermediateReader intermediateReader,
+        Dictionary<int, string> globalIdCache)
     {
         var parentSlot = indexes.GetSlotOrMissing(current.EntityId);
         if (parentSlot < 0 || parentSlot + 1 >= adjacency.Offsets.Length)
@@ -274,18 +281,44 @@ internal static class FastStepJsonEmitter
             return;
         }
 
-        var childIds = new List<int>(end - start);
-        for (var edgeIndex = start; edgeIndex < end; edgeIndex++)
+        var childCount = end - start;
+        var pooledChildren = ArrayPool<ChildSortEntry>.Shared.Rent(childCount);
+
+        try
         {
-            childIds.Add(indexes.EntityIdsBySlot[adjacency.Edges[edgeIndex]]);
+            var childIndex = 0;
+            for (var edgeIndex = start; edgeIndex < end; edgeIndex++)
+            {
+                var childEntityId = indexes.EntityIdsBySlot[adjacency.Edges[edgeIndex]];
+                var childGlobalId = GetGlobalIdCached(indexes, intermediateReader, childEntityId, globalIdCache);
+                pooledChildren[childIndex++] = new ChildSortEntry(childEntityId, childGlobalId);
+            }
+
+            PushChildrenOrdered(stack, pooledChildren, childCount, current.EntityId);
+        }
+        finally
+        {
+            Array.Clear(pooledChildren, 0, childCount);
+            ArrayPool<ChildSortEntry>.Shared.Return(pooledChildren, clearArray: false);
+        }
+    }
+
+    private static void PushChildrenOrdered(
+        Stack<FastStepTraversalNode> stack,
+        ChildSortEntry[] children,
+        int childCount,
+        int parentEntityId)
+    {
+        if (childCount == 0)
+        {
+            return;
         }
 
-        childIds.Sort((left, right) => StringComparer.Ordinal.Compare(GetGlobalId(indexes, intermediateReader, left), GetGlobalId(indexes, intermediateReader, right)));
+        Array.Sort(children, 0, childCount, ChildSortEntryComparer);
 
-        for (var i = childIds.Count - 1; i >= 0; i--)
+        for (var i = childCount - 1; i >= 0; i--)
         {
-            var childId = childIds[i];
-            stack.Push(new FastStepTraversalNode(childId, current.EntityId));
+            stack.Push(new FastStepTraversalNode(children[i].EntityId, parentEntityId));
         }
     }
 
@@ -356,9 +389,14 @@ internal static class FastStepJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static bool TryGetGlobalIdToken(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId, out ulong token)
+    private static bool TryGetGlobalIdToken(
+        FastStepIndexes indexes,
+        FastStepMmfIntermediateReader intermediateReader,
+        int entityId,
+        Dictionary<int, string> cache,
+        out ulong token)
     {
-        var globalId = GetGlobalId(indexes, intermediateReader, entityId);
+        var globalId = GetGlobalIdCached(indexes, intermediateReader, entityId, cache);
         if (string.IsNullOrWhiteSpace(globalId))
         {
             token = 0;
@@ -387,6 +425,22 @@ internal static class FastStepJsonEmitter
         }
 
         return hash;
+    }
+
+    private static string GetGlobalIdCached(
+        FastStepIndexes indexes,
+        FastStepMmfIntermediateReader intermediateReader,
+        int entityId,
+        Dictionary<int, string> cache)
+    {
+        if (cache is not null && cache.TryGetValue(entityId, out var cached))
+        {
+            return cached;
+        }
+
+        var globalId = GetGlobalId(indexes, intermediateReader, entityId);
+        cache?[entityId] = globalId;
+        return globalId;
     }
 
     private static string GetGlobalId(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId)
@@ -430,7 +484,15 @@ internal static class FastStepJsonEmitter
     private readonly record struct FastStepTraversalNode(int EntityId, int ParentEntityId);
 
     private readonly record struct FastStepRelationAdjacency(FastStepAdjacency Decomposition, FastStepAdjacency Containment);
+
+    private readonly record struct ChildSortEntry(int EntityId, string GlobalId);
 }
+
+
+
+
+
+
 
 
 
