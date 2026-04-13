@@ -9,7 +9,7 @@
 		<Authors>Bingosoft</Authors>
 		<Copyright>Bingosoft</Copyright>
 		<Platforms>x64</Platforms>
-		<AssemblyVersion>1.23.0</AssemblyVersion>
+		<AssemblyVersion>1.24.0</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
@@ -38,8 +38,8 @@
 		<DebuggerSupport>false</DebuggerSupport>
 		<EventSourceSupport>false</EventSourceSupport>
 		<MetadataUpdaterSupport>false</MetadataUpdaterSupport>
-		<SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
-		<TrimmerSingleWarn>false</TrimmerSingleWarn>
+		<SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+		<TrimmerSingleWarn>true</TrimmerSingleWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -59,12 +59,4 @@
 		</AssemblyAttribute>
 	</ItemGroup>
 </Project>
-
-
-
-
-
-
-
-
 

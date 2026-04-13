@@ -1,6 +1,23 @@
 # Changelog
 
+## [1.24.0] - 2026-04-13 11:00
+
+### Summary
+- Switched Release publish configuration to the compact `small` profile for minimum single-file size.
+- Disabled trim analysis warning output in publish logs to reduce diagnostic noise for the small distribution mode.
+
+### Changed
+- Updated `src/ifc-metadata.csproj` Release publish settings:
+  - keep `PublishTrimmed=true` and `TrimMode=full` with single-file compression;
+  - set `SuppressTrimAnalysisWarnings=true` and `TrimmerSingleWarn=true`.
+- Removed xBIM trimmer root descriptor wiring from project configuration to restore minimum output size behavior.
+- Updated project version to `1.24.0` in `src/ifc-metadata.csproj`.
+
+### Fixed
+- Restored compact publish artifact size after temporary descriptor-based xBIM preservation experiments.
+
 ## [1.23.0] - 2026-04-11 21:05
+
 
 ### Summary
 - Added memory-mapped intermediate storage for fast-step scan/export to reduce retained in-memory payload for large IFC files.
