@@ -257,7 +257,7 @@ internal static class Program
         }
     }
 
-        private static bool TryParseProgressMode(string value, out ProgressMode progressMode)
+    private static bool TryParseProgressMode(string value, out ProgressMode progressMode)
     {
         switch (value.Trim().ToLowerInvariant())
         {
@@ -334,7 +334,7 @@ internal static class Program
         Console.WriteLine($"Target JSON: {jsonTargetFile.FullName}");
         Console.WriteLine($"PreserveOrder: {preserveOrder}");
         Console.WriteLine($"Output buffer: {FormatBytes(outputBufferSize)} ({outputBufferSize} bytes)");
-                Console.WriteLine($"WriteThrough: {writeThrough}");
+        Console.WriteLine($"WriteThrough: {writeThrough}");
 
         Console.WriteLine($"Requested engine: {engine}");
         Console.WriteLine($"Effective engine: {exportReport.ExecutionDetails.EffectiveEngine}");
@@ -432,7 +432,7 @@ internal static class Program
         Detailed,
     }
 
-        private enum ProgressMode
+    private enum ProgressMode
     {
         None,
         Completed,

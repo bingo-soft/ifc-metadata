@@ -8,3 +8,14 @@ src/Properties/
 ifc/
 artifacts/
 docs/trimmer-checklist.md
+
+*.user
+*.DotSettings.user
+
+.codex/
+AGENTS.md
+
+benchmarks/results/**/*.log
+benchmarks/results/**/*.csv
+benchmarks/results/stage0/**/*.json
+

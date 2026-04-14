@@ -198,7 +198,7 @@ internal sealed class MetadataExtractor
         ExtractRelatedObjects(objectDefinition, metaObjects, parentObject.Id);
     }
 
-    
+
 
     private static void ExtractRelatedObjects(IIfcObjectDefinition objectDefinition, List<Metadata> metaObjects, string parentObjId)
     {

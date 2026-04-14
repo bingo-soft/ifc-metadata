@@ -1,11 +1,18 @@
 # JSON contract baseline (Stage 0)
 
-Документ фиксирует текущий контракт JSON до оптимизаций вариантов A/B.
-Источник истины: `src/IfcStreamingJsonExporter.cs`.
+This document fixes the current JSON contract used by both export engines.
+Primary implementation sources:
+- `src/IfcStreamingJsonExporter.cs` (xBIM baseline)
+- `src/FastStep/FastStepJsonEmitter.cs` (fast-step path)
+
+Contract parity is validated by:
+- `tests/IfcJsonHelperTests.cs`
+- `tests/FastStepJsonEmitterTests.cs`
+- `tests/FastStepParityTests.cs`
 
 ## 1. Root object
 
-Порядок полей в корне:
+Field order in root:
 
 1. `id`
 2. `projectId`
@@ -15,7 +22,7 @@
 6. `creatingApplication`
 7. `metaObjects`
 
-### Поля корня
+### Root fields
 
 | Field | Type | Nullable | Source |
 |---|---|---:|---|
@@ -88,7 +95,7 @@ Contract note:
 - JSON object member order for `metaObjects` follows traversal write order.
 - For baseline parity checks, compare outputs under the same `preserve-order` mode.
 
-## 5. Baseline parity criteria for future fast-path
+## 5. Baseline parity criteria (xBIM vs fast-step)
 
 For each validation IFC file:
 1. root fields are present and in same order.
