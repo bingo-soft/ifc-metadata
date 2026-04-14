@@ -1,60 +1,145 @@
 # ifc-metadata
-A command line tool used for transforming IFC into JSON format. The result is a flat array with objects, that looks like so:
 
-```json
-{
-  "id": "301-16-17-37",
-  "projectId": "3ir4vYruPFgwIKoil6nQwl",
-  "author": "",
-  "createdAt": "2022-09-07T11:00:15+03:00",
-  "schema": "IFC2X3",
-  "creatingApplication": "23.0.20.21 - Exporter 23.1.0.0 - Alternate UI 23.1.0.0",
-  "metaObjects": [
-    "3ir4vYruPFgwIKoil6nQwl": {
-      "id": "3ir4vYruPFgwIKoil6nQwl",
-      "name": "301-16-17-37",
-      "type": "IfcProject",
-      "parent": null,
-      "properties": null,
-      "material_id": null,
-      "type_id": null
-    },
-    "3ir4vYruPFgwIKoiivFWhQ": {
-      "id": "3ir4vYruPFgwIKoiivFWhQ",
-      "name": "отм.-2.200",
-      "type": "IfcBuildingStorey",
-      "parent": "3ir4vYruPFgwIKoil6nQwk",
-      "properties": [
-        "2WQTeXfdiDDhovj75kv9wo",
-        "1YsnWV5c54bB1rZvrNL1Jv",
-        "1YsnWV5c54bB1rZuXNL1Jv",
-        "292aB3oLfoC$GhSDfe0TtF",
-        "1YsnWV5c54bB1rZujNL1Jv",
-        "3_AGd$Xpr04hLlNrx3_Z1p",
-        "3_AGd$Xpr04hLlNq$3_Z1p",
-        "3_AGd$Xpr04hLlNrh3_Z1p",
-        "0ElD7aiHwyAg3nGYY93Ltc"
-      ],
-      "material_id": null,
-      "type_id": null
-    }
-  ]
-}
+CLI tool for exporting IFC metadata from `.ifc` into JSON.
+Current project version: `1.25.0`.
+
+## Purpose
+
+Input:
+- IFC file (`.ifc`).
+
+Output:
+- root metadata: `id`, `projectId`, `author`, `createdAt`, `schema`, `creatingApplication`;
+- `metaObjects` as map (`GlobalId -> object`);
+- each object contains: `id`, `name`, `type`, `parent`, `properties`, `material_id`, `type_id`.
+
+## Quick start
+
+Build:
+
+```bash
+dotnet build ifc-metadata.slnx -c Release
 ```
 
-# Installation
+Run:
 
-```shell
-$ git clone https://github.com/bingo-soft/ifc-metadata && cd ifc-metadata/src \
-    && dotnet publish ./ifc-metadata.csproj -c Release -r linux-x64 --self-contained false --output ifc-metadata-linux-x64 \
-    && chmod -R 755 ./bin/Release/net7.0/linux-x64 && chown -R www-data:www-data ./bin/Release/net7.0/linux-x64 \
-    && ln -s /ifc-tools/ifc-metadata/src/bin/Release/net7.0/linux-x64/ifc-metadata /usr/local/bin/ifc-metadata
+```bash
+dotnet run --project src/ifc-metadata.csproj -- ./path/to/source.ifc ./path/to/target.json
 ```
 
-# Usage
+If `target.json` is omitted, the file is created next to the input IFC with the name `source.json`.
 
-```shell
-$ ifc-metadata source.ifc target.json
+## CLI
+
+```bash
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--no-preserve-order] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
 ```
 
+### Options
 
+- `--engine xbim|fast-step`
+  - default: `xbim`;
+  - for `fast-step`, router falls back to `xbim` on schema-read failure, unsupported schema, or fast-step runtime failure;
+  - current fast-step schema families: `IFC2X2*`, `IFC2X3*`, `IFC4`, `IFC4X3*`.
+
+- `--preserve-order true|false` and `--no-preserve-order`
+  - default: `true`.
+
+- `--verbosity [summary|detailed|timing|none]`
+  - default: `none`;
+  - `summary|detailed|normal|verbose` => full execution report + accessor telemetry;
+  - `timing|time` => elapsed time only;
+  - `quiet|none` => no post-run report.
+
+- `--progress [none|completed|remaining]`
+  - default: `completed`;
+  - alias: `off` = `none`.
+
+- `--output-buffer-kb N`
+  - default: `512` KB.
+
+- `--write-through` / `--no-write-through`
+  - default: `--no-write-through`.
+
+### Exit codes
+
+- `0` - success.
+- `1` - argument error, missing input file, or runtime error.
+
+## Architecture
+
+1. `Program` (`src/Program.cs`)
+   - CLI parsing;
+   - execution/reporting/progress;
+   - exit codes.
+
+2. `IfcEngineRouter` (`src/IfcEngineRouter.cs`)
+   - engine selection: `xbim` or `fast-step`;
+   - `fast-step` fallback to `xbim`;
+   - diagnostics: requested/effective engine and fallback reason.
+
+3. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
+   - baseline xBIM exporter;
+   - streaming JSON writer;
+   - dedup rule: `last occurrence wins`.
+
+4. `FastStepJsonExporter` + `src/FastStep/*`
+   - STEP scan/index + direct JSON emit;
+   - parity with baseline contract.
+
+5. `IfcAccessors` (`src/IfcAccessors.cs`)
+   - fast accessors for `type_id`, `material_id`, `GlobalId`, `EntityLabel`;
+   - fast/fallback telemetry.
+
+## Publish
+
+Single-file self-contained publish:
+
+```bash
+dotnet publish ./src/ifc-metadata.csproj -c Release -r win-x64
+dotnet publish ./src/ifc-metadata.csproj -c Release -r linux-x64
+```
+
+Artifacts:
+- Windows: `ifc-metadata-v2.exe`
+- Linux: `ifc-metadata-v2`
+
+## Tests
+
+```bash
+dotnet test ifc-metadata.slnx -c Release
+```
+
+## Benchmarks
+
+Normal mode:
+
+```bash
+dotnet run --project benchmarks/ifc-metadata.Benchmarks.csproj -c Release
+```
+
+Detailed mode:
+
+```bash
+dotnet run --project benchmarks/ifc-metadata.Benchmarks.csproj -c Release -- --detailed
+```
+
+Baseline cycle:
+
+```bash
+pwsh ./benchmarks/run-baseline.ps1 -IfcFilePath "ifc/01_26_Slavyanka_4.ifc"
+```
+
+## Limitations
+
+- No formal JSON Schema file (contract is documented in markdown).
+- All runtime failures currently map to `exit 1`.
+- Rare runtime types can still hit accessor fallback paths; monitor through telemetry/benchmarks.
+
+## Documentation index
+
+- release evolution: `docs/changes-since-1.0.0.md`
+- JSON contract baseline: `docs/json-contract-baseline.md`
+- repository publication scope: `docs/repository-publication-scope.md`
+- reusable project prompt: `docs/reuse-prompt-for-similar-project.md`
+- benchmark process policy: `benchmarks/benchmark_policy.md`
