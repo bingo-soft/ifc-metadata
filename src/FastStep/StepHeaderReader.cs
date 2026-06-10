@@ -108,14 +108,24 @@ internal static class StepHeaderReader
 
     private static System.Collections.Generic.List<string> ReadHeaderArguments(string content, string headerFunctionName)
     {
-        var marker = headerFunctionName + "(";
-        var markerIndex = content.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        var markerIndex = content.IndexOf(headerFunctionName, StringComparison.OrdinalIgnoreCase);
         if (markerIndex < 0)
         {
             return [];
         }
 
-        var index = markerIndex + marker.Length;
+        var openParenIndex = markerIndex + headerFunctionName.Length;
+        while (openParenIndex < content.Length && char.IsWhiteSpace(content[openParenIndex]))
+        {
+            openParenIndex++;
+        }
+
+        if (openParenIndex >= content.Length || content[openParenIndex] != '(')
+        {
+            return [];
+        }
+
+        var index = openParenIndex + 1;
         var depth = 1;
         var inString = false;
 
@@ -149,13 +159,13 @@ internal static class StepHeaderReader
             return [];
         }
 
-        var argsLength = index - (markerIndex + marker.Length) - 1;
+        var argsLength = index - openParenIndex - 2;
         if (argsLength < 0)
         {
             return [];
         }
 
-        var args = content.Substring(markerIndex + marker.Length, argsLength);
+        var args = content.Substring(openParenIndex + 1, argsLength);
         return StepParsingUtilities.SplitTopLevelArguments(args);
     }
 }

@@ -23,14 +23,20 @@ internal static class IfcStreamingJsonExporter
         bool preserveOrder,
         int outputFileBufferSize = DefaultOutputFileBufferSize,
         bool writeThrough = false,
-        Action<int, int> progressReporter = null)
+        Action<int, int> progressReporter = null,
+        Action<string> diagnosticsLogger = null)
     {
+        diagnosticsLogger?.Invoke("xbim: open model start");
         using var model = IfcStore.Open(ifcSourceFile.FullName);
+        diagnosticsLogger?.Invoke("xbim: open model complete");
+        diagnosticsLogger?.Invoke("xbim: find project start");
         var project = model.Instances.FirstOrDefault<IIfcProject>()
                       ?? throw new InvalidOperationException("IFC project root (IIfcProject) was not found.");
+        diagnosticsLogger?.Invoke("xbim: find project complete");
 
         var schemaVersion = model.Header.SchemaVersion;
         var isFallbackForced = IsFallbackForced();
+        diagnosticsLogger?.Invoke($"xbim: schema={schemaVersion}");
 
         if (!isFallbackForced && IfcSchemaRouter.IsIfc2x3(schemaVersion) && project is Xbim.Ifc2x3.Kernel.IfcProject ifc2x3Project)
         {
@@ -89,15 +95,26 @@ internal static class IfcStreamingJsonExporter
 internal readonly struct IfcExportReport
 {
     internal IfcExportReport(string schemaVersion, int metaObjectCount)
-        : this(schemaVersion, metaObjectCount, IfcEngineExecutionDetails.None)
+        : this(schemaVersion, metaObjectCount, IfcEngineExecutionDetails.None, FastStepTelemetrySnapshot.Empty)
     {
     }
 
     internal IfcExportReport(string schemaVersion, int metaObjectCount, IfcEngineExecutionDetails executionDetails)
+        : this(schemaVersion, metaObjectCount, executionDetails, FastStepTelemetrySnapshot.Empty)
+    {
+    }
+
+    internal IfcExportReport(string schemaVersion, int metaObjectCount, FastStepTelemetrySnapshot fastStepTelemetry)
+        : this(schemaVersion, metaObjectCount, IfcEngineExecutionDetails.None, fastStepTelemetry)
+    {
+    }
+
+    private IfcExportReport(string schemaVersion, int metaObjectCount, IfcEngineExecutionDetails executionDetails, FastStepTelemetrySnapshot fastStepTelemetry)
     {
         SchemaVersion = schemaVersion;
         MetaObjectCount = metaObjectCount;
         ExecutionDetails = executionDetails;
+        FastStepTelemetry = fastStepTelemetry;
     }
 
     internal string SchemaVersion { get; }
@@ -106,9 +123,11 @@ internal readonly struct IfcExportReport
 
     internal IfcEngineExecutionDetails ExecutionDetails { get; }
 
+    internal FastStepTelemetrySnapshot FastStepTelemetry { get; }
+
     internal IfcExportReport WithExecutionDetails(IfcEngineExecutionDetails executionDetails)
     {
-        return new IfcExportReport(SchemaVersion, MetaObjectCount, executionDetails);
+        return new IfcExportReport(SchemaVersion, MetaObjectCount, executionDetails, FastStepTelemetry);
     }
 }
 
@@ -164,4 +183,87 @@ internal readonly struct IfcEngineExecutionDetails
     internal string FallbackReason { get; }
 
     internal string FastStepSchema { get; }
+}
+
+internal readonly struct FastStepTelemetrySnapshot
+{
+    internal static readonly FastStepTelemetrySnapshot Empty = new(
+        globalIdIndexHits: 0,
+        globalIdRawFallbackHits: 0,
+        globalIdMisses: 0,
+        nameIndexHits: 0,
+        nameRawFallbackHits: 0,
+        nameMisses: 0,
+        propertySetHits: 0,
+        propertySetMisses: 0,
+        materialHits: 0,
+        materialMisses: 0,
+        typeHits: 0,
+        typeMisses: 0);
+
+    internal FastStepTelemetrySnapshot(
+        long globalIdIndexHits,
+        long globalIdRawFallbackHits,
+        long globalIdMisses,
+        long nameIndexHits,
+        long nameRawFallbackHits,
+        long nameMisses,
+        long propertySetHits,
+        long propertySetMisses,
+        long materialHits,
+        long materialMisses,
+        long typeHits,
+        long typeMisses)
+    {
+        GlobalIdIndexHits = globalIdIndexHits;
+        GlobalIdRawFallbackHits = globalIdRawFallbackHits;
+        GlobalIdMisses = globalIdMisses;
+        NameIndexHits = nameIndexHits;
+        NameRawFallbackHits = nameRawFallbackHits;
+        NameMisses = nameMisses;
+        PropertySetHits = propertySetHits;
+        PropertySetMisses = propertySetMisses;
+        MaterialHits = materialHits;
+        MaterialMisses = materialMisses;
+        TypeHits = typeHits;
+        TypeMisses = typeMisses;
+    }
+
+    internal long GlobalIdIndexHits { get; }
+
+    internal long GlobalIdRawFallbackHits { get; }
+
+    internal long GlobalIdMisses { get; }
+
+    internal long NameIndexHits { get; }
+
+    internal long NameRawFallbackHits { get; }
+
+    internal long NameMisses { get; }
+
+    internal long PropertySetHits { get; }
+
+    internal long PropertySetMisses { get; }
+
+    internal long MaterialHits { get; }
+
+    internal long MaterialMisses { get; }
+
+    internal long TypeHits { get; }
+
+    internal long TypeMisses { get; }
+
+    internal bool HasValues =>
+        GlobalIdIndexHits != 0
+        || GlobalIdRawFallbackHits != 0
+        || GlobalIdMisses != 0
+        || NameIndexHits != 0
+        || NameRawFallbackHits != 0
+        || NameMisses != 0
+        || PropertySetHits != 0
+        || PropertySetMisses != 0
+        || MaterialHits != 0
+        || MaterialMisses != 0
+        || TypeHits != 0
+        || TypeMisses != 0;
 }

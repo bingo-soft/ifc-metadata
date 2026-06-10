@@ -141,6 +141,49 @@ public sealed class StepEntityScannerTests
     }
 
     [Fact]
+    public void ScanWithHeader_ReportsFileProgress_WhenScanningFile()
+    {
+        var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-scan-progress-{Guid.NewGuid():N}.ifc");
+        var progress = new List<(int Processed, int Total)>();
+
+        const string step = """
+        ISO-10303-21;
+        HEADER;
+        FILE_NAME('fixture.ifc','2024-01-01T00:00:00',('author'),('org'),'app','system','auth');
+        FILE_SCHEMA(('IFC4'));
+        ENDSEC;
+        DATA;
+        #10=IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        #11=IFCSITE('site-guid',$,'Site',$,$,$,$,$,$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        try
+        {
+            File.WriteAllText(ifcPath, step);
+
+            _ = StepEntityScanner.ScanWithHeader(
+                new FileInfo(ifcPath),
+                new FastStepScanOptions(
+                    CaptureDiagnostics: false,
+                    ProgressReporter: (processed, total) => progress.Add((processed, total))));
+
+            Assert.NotEmpty(progress);
+            Assert.Equal(0, progress[0].Processed);
+            Assert.Equal(10000, progress[^1].Processed);
+            Assert.All(progress, item => Assert.Equal(10000, item.Total));
+        }
+        finally
+        {
+            if (File.Exists(ifcPath))
+            {
+                File.Delete(ifcPath);
+            }
+        }
+    }
+
+    [Fact]
     public void Scan_HandlesEscapedQuotes_InStepStrings()
     {
         const string step = "#10=IFCPROJECT('guid',$,'Project ''A''',$,$,$,$,$,$);";

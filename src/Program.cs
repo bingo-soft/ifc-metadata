@@ -19,7 +19,8 @@ internal static class Program
                 out var writeThrough,
                 out var engine,
                 out var verbosity,
-                out var progressMode))
+                out var progressMode,
+                out var diagnosticsLogFile))
         {
             PrintUsage();
             Environment.Exit(1);
@@ -38,10 +39,20 @@ internal static class Program
                 : 0L;
 
             var stopwatch = Stopwatch.StartNew();
+            using var diagnosticsLog = OpenDiagnosticsLog(diagnosticsLogFile);
+            var diagnosticsLogger = CreateDiagnosticsLogger(diagnosticsLog, stopwatch);
             var progressReporter = CreateProgressReporter(progressMode);
+
+            diagnosticsLogger?.Invoke("program: start");
+            diagnosticsLogger?.Invoke($"program: source={ifcSourceFile.FullName}");
+            diagnosticsLogger?.Invoke($"program: target={jsonTargetFile.FullName}");
+            diagnosticsLogger?.Invoke($"program: engine={engine}");
 
             IfcAccessors.SetTelemetryEnabled(verbosity is Verbosity.Detailed);
             IfcAccessors.ResetTelemetry();
+
+            progressReporter?.Invoke(0, 10000);
+            diagnosticsLogger?.Invoke("router: export start");
 
             var exportReport = IfcEngineRouter.Export(
                 ifcSourceFile,
@@ -50,7 +61,10 @@ internal static class Program
                 engine,
                 outputBufferSize,
                 writeThrough,
-                progressReporter);
+                progressReporter,
+                diagnosticsLogger);
+
+            diagnosticsLogger?.Invoke("router: export complete");
 
             if (progressReporter is not null)
             {
@@ -104,10 +118,12 @@ internal static class Program
         out bool writeThrough,
         out IfcExportEngine engine,
         out Verbosity verbosity,
-        out ProgressMode progressMode)
+        out ProgressMode progressMode,
+        out FileInfo diagnosticsLogFile)
     {
         ifcSourceFile = null;
         jsonTargetFile = null;
+        diagnosticsLogFile = null;
         preserveOrder = true;
         outputBufferSize = IfcStreamingJsonExporter.DefaultOutputFileBufferSize;
         writeThrough = false;
@@ -190,6 +206,17 @@ internal static class Program
                     i++;
                     break;
 
+                case "--diagnostics-log":
+                case "--phase-log":
+                    if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    diagnosticsLogFile = new FileInfo(args[i + 1]);
+                    i++;
+                    break;
+
                 case "--write-through":
                     writeThrough = true;
                     break;
@@ -231,6 +258,38 @@ internal static class Program
             : new FileInfo(targetPath);
 
         return true;
+    }
+
+    private static StreamWriter OpenDiagnosticsLog(FileInfo diagnosticsLogFile)
+    {
+        if (diagnosticsLogFile is null)
+        {
+            return null;
+        }
+
+        if (diagnosticsLogFile.Directory is not null && !diagnosticsLogFile.Directory.Exists)
+        {
+            diagnosticsLogFile.Directory.Create();
+        }
+
+        return new StreamWriter(diagnosticsLogFile.FullName, append: false)
+        {
+            AutoFlush = true,
+        };
+    }
+
+    private static Action<string> CreateDiagnosticsLogger(StreamWriter writer, Stopwatch stopwatch)
+    {
+        if (writer is null)
+        {
+            return null;
+        }
+
+        return message =>
+        {
+            var elapsed = stopwatch.Elapsed.TotalMilliseconds.ToString("N2", CultureInfo.InvariantCulture);
+            writer.WriteLine($"{DateTimeOffset.Now:O}\t+{elapsed} ms\t{message}");
+        };
     }
 
     private static bool TryParseVerbosity(string value, out Verbosity verbosity)
@@ -284,7 +343,7 @@ internal static class Program
             return null;
         }
 
-        var lastPercent = int.MinValue;
+        var lastDisplayPermille = int.MinValue;
 
 
         return (processed, total) =>
@@ -294,22 +353,41 @@ internal static class Program
                 return;
             }
 
-            var completedPercent = (processed * 100) / total;
-            var displayPercent = progressMode switch
+            var completedPermille = (int)Math.Min(1000, (processed * 1000L) / total);
+            var displayPermille = progressMode switch
             {
-                ProgressMode.Completed => completedPercent,
-                ProgressMode.Remaining => 100 - completedPercent,
-                _ => completedPercent,
+                ProgressMode.Completed => completedPermille,
+                ProgressMode.Remaining => 1000 - completedPermille,
+                _ => completedPermille,
             };
 
-            if (displayPercent == lastPercent)
+            if (displayPermille == lastDisplayPermille)
             {
                 return;
             }
 
-            lastPercent = displayPercent;
-            Console.Write($"\r{displayPercent}");
+            lastDisplayPermille = displayPermille;
+            var label = progressMode == ProgressMode.Remaining ? "Remaining" : "Progress";
+            var progressText = $"{label}: {FormatProgressPercent(displayPermille)}";
+
+            if (Console.IsOutputRedirected)
+            {
+                Console.WriteLine(progressText);
+            }
+            else
+            {
+                Console.Write($"\r{progressText}");
+            }
+
+            Console.Out.Flush();
         };
+    }
+
+    private static string FormatProgressPercent(int permille)
+    {
+        var whole = permille / 10;
+        var fraction = permille % 10;
+        return string.Format(CultureInfo.InvariantCulture, "{0}.{1}%", whole, fraction);
     }
 
     private static void PrintExecutionReport(
@@ -361,6 +439,11 @@ internal static class Program
         PrintTelemetryRow("EntityLabel", telemetry.EntityLabelFastHits, telemetry.EntityLabelFallbackHits);
         PrintTelemetryRow("GlobalId", telemetry.GlobalIdFastHits, telemetry.GlobalIdFallbackHits);
 
+        if (exportReport.FastStepTelemetry.HasValues)
+        {
+            PrintFastStepTelemetry(exportReport.FastStepTelemetry);
+        }
+
         if (telemetry.FallbackTypeHits.Count > 0)
         {
             Console.WriteLine();
@@ -372,6 +455,17 @@ internal static class Program
         }
 
         Console.WriteLine("=== end of report ===");
+    }
+
+    private static void PrintFastStepTelemetry(FastStepTelemetrySnapshot telemetry)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Fast-step telemetry:");
+        Console.WriteLine($"  GlobalId: index={telemetry.GlobalIdIndexHits}, rawFallback={telemetry.GlobalIdRawFallbackHits}, missing={telemetry.GlobalIdMisses}");
+        Console.WriteLine($"  Name: index={telemetry.NameIndexHits}, rawFallback={telemetry.NameRawFallbackHits}, missing={telemetry.NameMisses}");
+        Console.WriteLine($"  Properties: found={telemetry.PropertySetHits}, null={telemetry.PropertySetMisses}");
+        Console.WriteLine($"  MaterialId: found={telemetry.MaterialHits}, null={telemetry.MaterialMisses}");
+        Console.WriteLine($"  TypeId: found={telemetry.TypeHits}, null={telemetry.TypeMisses}");
     }
 
     private static void PrintTelemetryRow(string accessorName, long fastHits, long fallbackHits)
@@ -415,7 +509,7 @@ internal static class Program
         Console.WriteLine("Please specify the path to the IFC and optional output json.");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [/path_to_file.json] [--preserve-order true|false]");
         Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc --no-preserve-order");
-        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]");
+        Console.WriteLine("Usage: ifc_metadata /path_to_file.ifc [output.json] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--diagnostics-log path] [--write-through|--no-write-through]");
         Console.WriteLine("Default: preserve order is true.");
         Console.WriteLine($"Default output buffer: {IfcStreamingJsonExporter.DefaultOutputFileBufferSize / 1024} KB.");
         Console.WriteLine("Default write-through: disabled.");

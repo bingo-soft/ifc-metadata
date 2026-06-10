@@ -289,7 +289,9 @@ internal readonly record struct FastStepEntityRange(
 internal readonly record struct FastStepScanOptions(
     bool CaptureDiagnostics,
     string MmfIntermediateDirectoryPath = null,
-    long MmfSegmentSize = 256L * 1024 * 1024)
+    long MmfSegmentSize = 256L * 1024 * 1024,
+    Action<int, int> ProgressReporter = null,
+    Action<string> DiagnosticsLogger = null)
 {
     internal bool UseMmfIntermediateStore => !string.IsNullOrWhiteSpace(MmfIntermediateDirectoryPath);
 

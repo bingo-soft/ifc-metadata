@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -23,6 +24,8 @@ internal static class StepEntityScanner
 
     internal static FastStepIndexes Scan(TextReader reader, FastStepScanOptions options, out FastStepScanDiagnostics diagnostics)
     {
+        options.DiagnosticsLogger?.Invoke("fast-step scan: entity scan/index start");
+        var scanStopwatch = Stopwatch.StartNew();
         var indexes = new FastStepIndexes();
         var scanDiagnostics = options.CaptureDiagnostics ? new FastStepScanDiagnostics() : null;
         using var relationEdges = new FastStepRelationEdgeBuffers();
@@ -74,12 +77,18 @@ internal static class StepEntityScanner
             throw ex.InnerExceptions[0];
         }
 
+        scanStopwatch.Stop();
+        options.DiagnosticsLogger?.Invoke($"fast-step scan: entity scan/index complete entities={indexes.EntityCount} elapsedMs={scanStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
+        options.DiagnosticsLogger?.Invoke("fast-step scan: relation adjacency build start");
+        var adjacencyStopwatch = Stopwatch.StartNew();
         indexes.BuildRelationAdjacency(
             relationEdges.Decomposition,
             relationEdges.Containment,
             relationEdges.DefinesByProperties,
             relationEdges.AssociatesMaterial,
             relationEdges.DefinesByType);
+        adjacencyStopwatch.Stop();
+        options.DiagnosticsLogger?.Invoke($"fast-step scan: relation adjacency build complete elapsedMs={adjacencyStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
 
         diagnostics = scanDiagnostics;
         return indexes;
@@ -94,7 +103,13 @@ internal static class StepEntityScanner
     {
         using var stream = ifcSourceFile.OpenRead();
         using var reader = new StreamReader(stream);
-        return ScanWithHeader(reader, options);
+        if (options.ProgressReporter is null)
+        {
+            return ScanWithHeader(reader, options);
+        }
+
+        using var progressReader = new FileProgressTextReader(reader, stream, Math.Max(ifcSourceFile.Length, 1L), options.ProgressReporter);
+        return ScanWithHeader(progressReader, options);
     }
 
     internal static FastStepScanResult ScanWithHeader(TextReader reader)
@@ -104,7 +119,11 @@ internal static class StepEntityScanner
 
     internal static FastStepScanResult ScanWithHeader(TextReader reader, FastStepScanOptions options)
     {
+        options.DiagnosticsLogger?.Invoke("fast-step scan: header read start");
+        var headerStopwatch = Stopwatch.StartNew();
         var header = StepHeaderReader.Read(reader);
+        headerStopwatch.Stop();
+        options.DiagnosticsLogger?.Invoke($"fast-step scan: header read complete schema={header.Schema} elapsedMs={headerStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
         var indexes = Scan(reader, options, out var diagnostics);
         return new FastStepScanResult(indexes, header, diagnostics);
     }
@@ -407,4 +426,87 @@ internal sealed class FastStepRelationEdgeBuffer : IReadOnlyList<FastStepRelatio
 }
 
 internal readonly record struct FastStepScanResult(FastStepIndexes Indexes, FastStepHeader Header, FastStepScanDiagnostics Diagnostics);
+
+internal sealed class FileProgressTextReader : TextReader
+{
+    private const int ProgressUnits = 10000;
+
+    private readonly TextReader _inner;
+    private readonly Stream _stream;
+    private readonly long _totalBytes;
+    private readonly Action<int, int> _progressReporter;
+
+    private int _lastReportedUnits = -1;
+
+    internal FileProgressTextReader(TextReader inner, Stream stream, long totalBytes, Action<int, int> progressReporter)
+    {
+        _inner = inner;
+        _stream = stream;
+        _totalBytes = totalBytes;
+        _progressReporter = progressReporter;
+
+        ReportProgress(force: true);
+    }
+
+    public override int Peek()
+    {
+        return _inner.Peek();
+    }
+
+    public override int Read()
+    {
+        var result = _inner.Read();
+        if (result >= 0)
+        {
+            ReportProgress(force: false);
+        }
+
+        return result;
+    }
+
+    public override int Read(char[] buffer, int index, int count)
+    {
+        var read = _inner.Read(buffer, index, count);
+        if (read > 0)
+        {
+            ReportProgress(force: false);
+        }
+
+        return read;
+    }
+
+    public override string ReadLine()
+    {
+        var line = _inner.ReadLine();
+        if (line is not null)
+        {
+            ReportProgress(force: false);
+        }
+
+        return line;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            ReportProgress(force: true);
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private void ReportProgress(bool force)
+    {
+        var bytesRead = Math.Min(_stream.Position, _totalBytes);
+        var units = (int)Math.Min(ProgressUnits, (bytesRead * ProgressUnits) / _totalBytes);
+        if (!force && units == _lastReportedUnits)
+        {
+            return;
+        }
+
+        _lastReportedUnits = units;
+        _progressReporter(units, ProgressUnits);
+    }
+}
 

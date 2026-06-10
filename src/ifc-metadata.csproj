@@ -9,13 +9,14 @@
 		<Authors>Bingosoft</Authors>
 		<Copyright>Bingosoft</Copyright>
 		<Platforms>x64</Platforms>
-		<AssemblyVersion>1.25.0</AssemblyVersion>
+		<AssemblyVersion>1.26.0</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
 		<ImplicitUsings>disable</ImplicitUsings>
 		<Nullable>disable</Nullable>
+		<RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Debug'">

@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.26.0] - 2026-06-10 20:27
+
+### Summary
+- Added visible fast-step scan/emit progress and phase diagnostics for investigating long-running IFC conversions.
+- Changed engine dispatch so `--engine fast-step` runs fast-step directly without schema pre-read or automatic xBIM fallback.
+- Added fast-step telemetry and fixed STEP header parsing for spaced `FILE_SCHEMA (` / `FILE_NAME (` headers.
+
+### Added
+- Added `--diagnostics-log` / `--phase-log` CLI option that writes timestamped phase diagnostics for:
+  - program/router start and selected engine;
+  - fast-step header read, entity scan/index, relation adjacency build;
+  - traversal ordering, mapping cache build, output stream open, and JSON emit.
+- Added fast-step detailed-report telemetry for:
+  - GlobalId/name index hits, raw fallback hits, and misses;
+  - property/material/type mapping found/null counts.
+- Added `benchmarks/run-memory-diagnostic.ps1` for single-run memory diagnostics with external process sampling.
+- Added tests for scan progress, combined fast-step progress, spaced STEP header functions, and fast-step telemetry.
+
+### Changed
+- Updated `src/IfcEngineRouter.cs` to dispatch directly to the requested engine and stop falling back from fast-step to xBIM.
+- Updated fast-step progress reporting:
+  - scan/index occupies the first half of the progress range;
+  - JSON emit occupies the second half;
+  - CLI progress prints readable `Progress: N.N%` / `Remaining: N.N%` text and flushes output.
+- Updated Release restore support by declaring `win-x64` and `linux-x64` runtime identifiers in `src/ifc-metadata.csproj`.
+- Updated solution platform mapping so `Any CPU` solution builds map the main project to `x64`.
+- Updated project version to `1.26.0` in `src/ifc-metadata.csproj`.
+
+### Fixed
+- Fixed fast-step schema detection when STEP header functions include whitespace before the argument list, such as `FILE_SCHEMA (('IFC4'));`.
+- Fixed large-file progress percentage calculations to avoid integer overflow.
+
 ## [1.25.0] - 2026-04-13 12:48
 
 ### Summary

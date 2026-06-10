@@ -1,7 +1,7 @@
 # ifc-metadata
 
 CLI tool for exporting IFC metadata from `.ifc` into JSON.
-Current project version: `1.25.0`.
+Current project version: `1.26.0`.
 
 ## Purpose
 
@@ -32,14 +32,14 @@ If `target.json` is omitted, the file is created next to the input IFC with the 
 ## CLI
 
 ```bash
-ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--no-preserve-order] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--write-through|--no-write-through]
+ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--no-preserve-order] [--engine xbim|fast-step] [--verbosity [summary|detailed|timing|none]] [--progress [none|completed|remaining]] [--output-buffer-kb N] [--diagnostics-log path] [--write-through|--no-write-through]
 ```
 
 ### Options
 
 - `--engine xbim|fast-step`
   - default: `xbim`;
-  - for `fast-step`, router falls back to `xbim` on schema-read failure, unsupported schema, or fast-step runtime failure;
+  - the selected engine is used directly; there is no automatic fallback between engines;
   - current fast-step schema families: `IFC2X2*`, `IFC2X3*`, `IFC4`, `IFC4X3*`.
 
 - `--preserve-order true|false` and `--no-preserve-order`
@@ -58,6 +58,11 @@ ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--no-pres
 - `--output-buffer-kb N`
   - default: `512` KB.
 
+- `--diagnostics-log path`
+  - writes timestamped phase diagnostics to a text log;
+  - useful for locating long-running phases such as file open, scan/index, traversal, mapping, and JSON emit;
+  - alias: `--phase-log`.
+
 - `--write-through` / `--no-write-through`
   - default: `--no-write-through`.
 
@@ -74,9 +79,8 @@ ifc-metadata <source.ifc> [target.json] [--preserve-order true|false] [--no-pres
    - exit codes.
 
 2. `IfcEngineRouter` (`src/IfcEngineRouter.cs`)
-   - engine selection: `xbim` or `fast-step`;
-   - `fast-step` fallback to `xbim`;
-   - diagnostics: requested/effective engine and fallback reason.
+   - direct engine dispatch: `xbim` or `fast-step`;
+   - diagnostics: requested/effective engine.
 
 3. `IfcStreamingJsonExporter` (`src/IfcStreamingJsonExporter.cs`)
    - baseline xBIM exporter;

@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -26,7 +27,8 @@ internal static class FastStepJsonEmitter
         int outputFileBufferSize,
         bool writeThrough,
         Action<int, int> progressReporter,
-        FastStepMmfIntermediateReader intermediateReader = null)
+        FastStepMmfIntermediateReader intermediateReader = null,
+        Action<string> diagnosticsLogger = null)
     {
         if (indexes.Project is null || string.IsNullOrWhiteSpace(indexes.Project.Value.GlobalId))
         {
@@ -34,8 +36,8 @@ internal static class FastStepJsonEmitter
         }
 
         return intermediateReader is null
-            ? ExportWithoutSpill(indexes, header, jsonTargetFile, preserveOrder, outputFileBufferSize, writeThrough, progressReporter)
-            : ExportWithSpill(indexes, header, jsonTargetFile, preserveOrder, outputFileBufferSize, writeThrough, progressReporter, intermediateReader);
+            ? ExportWithoutSpill(indexes, header, jsonTargetFile, preserveOrder, outputFileBufferSize, writeThrough, progressReporter, diagnosticsLogger)
+            : ExportWithSpill(indexes, header, jsonTargetFile, preserveOrder, outputFileBufferSize, writeThrough, progressReporter, intermediateReader, diagnosticsLogger);
     }
 
     private static IfcExportReport ExportWithoutSpill(
@@ -45,16 +47,28 @@ internal static class FastStepJsonEmitter
         bool preserveOrder,
         int outputFileBufferSize,
         bool writeThrough,
-        Action<int, int> progressReporter)
+        Action<int, int> progressReporter,
+        Action<string> diagnosticsLogger)
     {
         var project = indexes.Project.Value;
+        var telemetry = new FastStepTelemetry();
         var relationAdjacency = new FastStepRelationAdjacency(indexes.DecompositionAdjacency, indexes.ContainmentAdjacency);
+        diagnosticsLogger?.Invoke("fast-step emit: build traversal order start");
+        var traversalStopwatch = Stopwatch.StartNew();
         var orderedNodes = BuildLastNodesByVisitOrder(indexes, project, preserveOrder, relationAdjacency, intermediateReader: null);
+        traversalStopwatch.Stop();
         var uniqueMetaObjects = orderedNodes.Count;
+        diagnosticsLogger?.Invoke($"fast-step emit: build traversal order complete uniqueMetaObjects={uniqueMetaObjects} elapsedMs={traversalStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
+        diagnosticsLogger?.Invoke("fast-step emit: build mapping cache start");
+        var mappingStopwatch = Stopwatch.StartNew();
         var mappings = FastStepMappingCache.Build(indexes);
+        mappingStopwatch.Stop();
+        diagnosticsLogger?.Invoke($"fast-step emit: build mapping cache complete elapsedMs={mappingStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
 
+        diagnosticsLogger?.Invoke("fast-step emit: open output stream start");
         using var stream = IfcStreamingExportUtilities.OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
         using var writer = new Utf8JsonWriter(stream, WriterOptions);
+        diagnosticsLogger?.Invoke("fast-step emit: open output stream complete");
 
         writer.WriteStartObject();
         writer.WriteString("id", project.Name);
@@ -68,10 +82,12 @@ internal static class FastStepJsonEmitter
         var processedMetaObjects = 0;
         progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
+        diagnosticsLogger?.Invoke("fast-step emit: write metaObjects start");
+        var writeStopwatch = Stopwatch.StartNew();
         const int emitBatchSize = 4096;
         foreach (var node in orderedNodes.Values)
         {
-            WriteMetaObject(writer, indexes, mappings, project, node, intermediateReader: null);
+            WriteMetaObject(writer, indexes, mappings, project, node, intermediateReader: null, telemetry);
 
             processedMetaObjects++;
             progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
@@ -86,8 +102,10 @@ internal static class FastStepJsonEmitter
         writer.WriteEndObject();
         writer.Flush();
         stream.Flush();
+        writeStopwatch.Stop();
+        diagnosticsLogger?.Invoke($"fast-step emit: write metaObjects complete processedMetaObjects={processedMetaObjects} elapsedMs={writeStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
 
-        return new IfcExportReport(header.Schema, uniqueMetaObjects);
+        return new IfcExportReport(header.Schema, uniqueMetaObjects, telemetry.GetSnapshot());
     }
 
     private static IfcExportReport ExportWithSpill(
@@ -98,18 +116,32 @@ internal static class FastStepJsonEmitter
         int outputFileBufferSize,
         bool writeThrough,
         Action<int, int> progressReporter,
-        FastStepMmfIntermediateReader intermediateReader)
+        FastStepMmfIntermediateReader intermediateReader,
+        Action<string> diagnosticsLogger)
     {
         var project = indexes.Project.Value;
+        var telemetry = new FastStepTelemetry();
         var relationAdjacency = new FastStepRelationAdjacency(indexes.DecompositionAdjacency, indexes.ContainmentAdjacency);
 
+        diagnosticsLogger?.Invoke("fast-step emit: cleanup object segments start");
         CleanupObjectSegments(intermediateReader.DirectoryPath);
+        diagnosticsLogger?.Invoke("fast-step emit: cleanup object segments complete");
+        diagnosticsLogger?.Invoke("fast-step emit: build traversal order spill start");
+        var traversalStopwatch = Stopwatch.StartNew();
         var lastOrderByObjectToken = BuildLastVisitOrderAndSpill(indexes, project, preserveOrder, relationAdjacency, intermediateReader);
+        traversalStopwatch.Stop();
         var uniqueMetaObjects = lastOrderByObjectToken.Count;
+        diagnosticsLogger?.Invoke($"fast-step emit: build traversal order spill complete uniqueMetaObjects={uniqueMetaObjects} elapsedMs={traversalStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
+        diagnosticsLogger?.Invoke("fast-step emit: build mapping cache start");
+        var mappingStopwatch = Stopwatch.StartNew();
         var mappings = FastStepMappingCache.Build(indexes);
+        mappingStopwatch.Stop();
+        diagnosticsLogger?.Invoke($"fast-step emit: build mapping cache complete elapsedMs={mappingStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
 
+        diagnosticsLogger?.Invoke("fast-step emit: open output stream start");
         using var stream = IfcStreamingExportUtilities.OpenOutputStream(jsonTargetFile, outputFileBufferSize, writeThrough);
         using var writer = new Utf8JsonWriter(stream, WriterOptions);
+        diagnosticsLogger?.Invoke("fast-step emit: open output stream complete");
 
         writer.WriteStartObject();
         writer.WriteString("id", project.Name);
@@ -123,6 +155,8 @@ internal static class FastStepJsonEmitter
         var processedMetaObjects = 0;
         progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
+        diagnosticsLogger?.Invoke("fast-step emit: write metaObjects start");
+        var writeStopwatch = Stopwatch.StartNew();
         const int emitBatchSize = 4096;
         foreach (var record in intermediateReader.EnumerateObjectRecords())
         {
@@ -139,7 +173,8 @@ internal static class FastStepJsonEmitter
                 mappings,
                 project,
                 new FastStepTraversalNode(record.EntityId, record.PayloadLength),
-                intermediateReader);
+                intermediateReader,
+                telemetry);
 
             processedMetaObjects++;
             progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
@@ -154,8 +189,10 @@ internal static class FastStepJsonEmitter
         writer.WriteEndObject();
         writer.Flush();
         stream.Flush();
+        writeStopwatch.Stop();
+        diagnosticsLogger?.Invoke($"fast-step emit: write metaObjects complete processedMetaObjects={processedMetaObjects} elapsedMs={writeStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
 
-        return new IfcExportReport(header.Schema, uniqueMetaObjects);
+        return new IfcExportReport(header.Schema, uniqueMetaObjects, telemetry.GetSnapshot());
     }
 
     private static Dictionary<ulong, int> BuildLastVisitOrderAndSpill(
@@ -328,9 +365,10 @@ internal static class FastStepJsonEmitter
         FastStepMappingCache mappings,
         FastStepProjectRecord project,
         FastStepTraversalNode node,
-        FastStepMmfIntermediateReader intermediateReader)
+        FastStepMmfIntermediateReader intermediateReader,
+        FastStepTelemetry telemetry)
     {
-        var objectId = GetGlobalId(indexes, intermediateReader, node.EntityId);
+        var objectId = GetGlobalId(indexes, intermediateReader, node.EntityId, telemetry);
         if (string.IsNullOrWhiteSpace(objectId))
         {
             return;
@@ -338,13 +376,13 @@ internal static class FastStepJsonEmitter
 
         var parentObjectId = node.ParentEntityId < 0
             ? null
-            : GetGlobalId(indexes, intermediateReader, node.ParentEntityId);
+            : GetGlobalId(indexes, intermediateReader, node.ParentEntityId, telemetry);
 
         writer.WritePropertyName(objectId);
         writer.WriteStartObject();
 
         writer.WriteString("id", objectId);
-        writer.WriteString("name", GetName(indexes, intermediateReader, node.EntityId));
+        writer.WriteString("name", GetName(indexes, intermediateReader, node.EntityId, telemetry));
         writer.WriteString("type", mappings.GetTypeName(node.EntityId));
         writer.WriteString("parent", parentObjectId);
 
@@ -354,6 +392,7 @@ internal static class FastStepJsonEmitter
         }
         else if (mappings.PropertySetByObjectId.TryGetValue(node.EntityId, out var psetIds) && psetIds.Count > 0)
         {
+            telemetry.PropertySetHits++;
             writer.WritePropertyName("properties");
             writer.WriteStartArray();
             for (var i = 0; i < psetIds.Count; i++)
@@ -365,24 +404,29 @@ internal static class FastStepJsonEmitter
         }
         else
         {
+            telemetry.PropertySetMisses++;
             writer.WriteNull("properties");
         }
 
         if (mappings.MaterialByObjectId.TryGetValue(node.EntityId, out var materialId) && !string.IsNullOrWhiteSpace(materialId))
         {
+            telemetry.MaterialHits++;
             writer.WriteString("material_id", materialId);
         }
         else
         {
+            telemetry.MaterialMisses++;
             writer.WriteNull("material_id");
         }
 
         if (mappings.TypeByObjectId.TryGetValue(node.EntityId, out var typeId) && !string.IsNullOrWhiteSpace(typeId))
         {
+            telemetry.TypeHits++;
             writer.WriteString("type_id", typeId);
         }
         else
         {
+            telemetry.TypeMisses++;
             writer.WriteNull("type_id");
         }
 
@@ -438,31 +482,57 @@ internal static class FastStepJsonEmitter
             return cached;
         }
 
-        var globalId = GetGlobalId(indexes, intermediateReader, entityId);
+        var globalId = GetGlobalIdWithoutTelemetry(indexes, intermediateReader, entityId);
         cache?[entityId] = globalId;
         return globalId;
     }
 
-    private static string GetGlobalId(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId)
+    private static string GetGlobalIdWithoutTelemetry(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId)
+    {
+        var globalId = indexes.GetGlobalId(entityId);
+        return !string.IsNullOrWhiteSpace(globalId)
+            ? globalId
+            : TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 0);
+    }
+
+    private static string GetGlobalId(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId, FastStepTelemetry telemetry)
     {
         var globalId = indexes.GetGlobalId(entityId);
         if (!string.IsNullOrWhiteSpace(globalId))
         {
+            telemetry.GlobalIdIndexHits++;
             return globalId;
         }
 
-        return TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 0);
+        globalId = TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 0);
+        if (!string.IsNullOrWhiteSpace(globalId))
+        {
+            telemetry.GlobalIdRawFallbackHits++;
+            return globalId;
+        }
+
+        telemetry.GlobalIdMisses++;
+        return globalId;
     }
 
-    private static string GetName(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId)
+    private static string GetName(FastStepIndexes indexes, FastStepMmfIntermediateReader intermediateReader, int entityId, FastStepTelemetry telemetry)
     {
         var name = indexes.GetName(entityId);
         if (name is not null)
         {
+            telemetry.NameIndexHits++;
             return name;
         }
 
-        return TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 2);
+        name = TryReadStringArgumentFromMmf(intermediateReader, entityId, argumentIndex: 2);
+        if (name is not null)
+        {
+            telemetry.NameRawFallbackHits++;
+            return name;
+        }
+
+        telemetry.NameMisses++;
+        return name;
     }
 
     private static string TryReadStringArgumentFromMmf(FastStepMmfIntermediateReader intermediateReader, int entityId, int argumentIndex)
@@ -486,6 +556,39 @@ internal static class FastStepJsonEmitter
     private readonly record struct FastStepRelationAdjacency(FastStepAdjacency Decomposition, FastStepAdjacency Containment);
 
     private readonly record struct ChildSortEntry(int EntityId, string GlobalId);
+
+    private sealed class FastStepTelemetry
+    {
+        internal long GlobalIdIndexHits;
+        internal long GlobalIdRawFallbackHits;
+        internal long GlobalIdMisses;
+        internal long NameIndexHits;
+        internal long NameRawFallbackHits;
+        internal long NameMisses;
+        internal long PropertySetHits;
+        internal long PropertySetMisses;
+        internal long MaterialHits;
+        internal long MaterialMisses;
+        internal long TypeHits;
+        internal long TypeMisses;
+
+        internal FastStepTelemetrySnapshot GetSnapshot()
+        {
+            return new FastStepTelemetrySnapshot(
+                GlobalIdIndexHits,
+                GlobalIdRawFallbackHits,
+                GlobalIdMisses,
+                NameIndexHits,
+                NameRawFallbackHits,
+                NameMisses,
+                PropertySetHits,
+                PropertySetMisses,
+                MaterialHits,
+                MaterialMisses,
+                TypeHits,
+                TypeMisses);
+        }
+    }
 }
 
 

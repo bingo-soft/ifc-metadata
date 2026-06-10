@@ -42,6 +42,11 @@ public sealed class FastStepJsonEmitterTests
 
             Assert.Equal("IFC4", report.SchemaVersion);
             Assert.Equal(2, report.MetaObjectCount);
+            Assert.True(report.FastStepTelemetry.HasValues);
+            Assert.True(report.FastStepTelemetry.GlobalIdIndexHits > 0);
+            Assert.True(report.FastStepTelemetry.NameIndexHits > 0);
+            Assert.True(report.FastStepTelemetry.MaterialHits > 0);
+            Assert.True(report.FastStepTelemetry.TypeHits > 0);
 
             using var document = JsonDocument.Parse(File.ReadAllText(jsonPath));
             var root = document.RootElement;
@@ -66,6 +71,64 @@ public sealed class FastStepJsonEmitterTests
             Assert.Equal("pset-guid", psets[0].GetString());
             Assert.Equal("IfcMaterial_40", site.GetProperty("material_id").GetString());
             Assert.Equal("type-guid", site.GetProperty("type_id").GetString());
+        }
+        finally
+        {
+            if (File.Exists(ifcPath))
+            {
+                File.Delete(ifcPath);
+            }
+
+            if (File.Exists(jsonPath))
+            {
+                File.Delete(jsonPath);
+            }
+        }
+    }
+
+    [Fact]
+    public void FastStepExporter_ReportsCombinedScanAndEmitProgress()
+    {
+        var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-fast-step-progress-{Guid.NewGuid():N}.ifc");
+        var jsonPath = Path.Combine(Path.GetTempPath(), $"ifc-fast-step-progress-{Guid.NewGuid():N}.json");
+        var progress = new List<(int Processed, int Total)>();
+
+        const string ifc = """
+        ISO-10303-21;
+        HEADER;
+        FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+        FILE_NAME('model.ifc','2024-01-01T00:00:00',('author'),('org'),'app','system','auth');
+        FILE_SCHEMA(('IFC4'));
+        ENDSEC;
+        DATA;
+        #10=IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        #11=IFCSITE('site-guid',$,'Site Name',$,$,$,$,$,$,$,$,$,$,$);
+        #20=IFCRELAGGREGATES('rel-1',$,$,$,#10,(#11));
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        try
+        {
+            File.WriteAllText(ifcPath, ifc);
+
+            _ = FastStepJsonExporter.Export(
+                new FileInfo(ifcPath),
+                new FileInfo(jsonPath),
+                preserveOrder: true,
+                64 * 1024,
+                writeThrough: false,
+                progressReporter: (processed, total) => progress.Add((processed, total)));
+
+            Assert.NotEmpty(progress);
+            Assert.Equal(0, progress[0].Processed);
+            Assert.Equal(10000, progress[^1].Processed);
+            Assert.All(progress, item => Assert.Equal(10000, item.Total));
+
+            for (var i = 1; i < progress.Count; i++)
+            {
+                Assert.True(progress[i].Processed >= progress[i - 1].Processed);
+            }
         }
         finally
         {
