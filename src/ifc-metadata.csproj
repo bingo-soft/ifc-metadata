@@ -1,32 +1,62 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <OutputType>Exe</OutputType>
-        <TargetFramework>net7.0</TargetFramework>
-        <RootNamespace>ifc_metadata</RootNamespace>
-        <Title>ifc_metadata</Title>
-        <Authors>Bingosoft</Authors>
-        <Copyright>Bingosoft</Copyright>
-        <Platforms>x64</Platforms>
-        <AssemblyVersion>0.0.5</AssemblyVersion>
-        <FileVersion>$(AssemblyVersion)</FileVersion>
-        <Version>$(AssemblyVersion)</Version>
-        <ServerGarbageCollection>false</ServerGarbageCollection>
-        <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-        <ImplicitUsings>disable</ImplicitUsings>
-        <Nullable>disable</Nullable>
-    </PropertyGroup>
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<RootNamespace>ifc_metadata</RootNamespace>
+		<AssemblyName>ifc-metadata-v2</AssemblyName>
+		<Title>ifc_metadata</Title>
+		<Authors>Bingosoft</Authors>
+		<Copyright>Bingosoft</Copyright>
+		<Platforms>x64</Platforms>
+		<AssemblyVersion>1.25.0</AssemblyVersion>
+		<FileVersion>$(AssemblyVersion)</FileVersion>
+		<Version>$(AssemblyVersion)</Version>
+		<ServerGarbageCollection>true</ServerGarbageCollection>
+		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<Nullable>disable</Nullable>
+	</PropertyGroup>
 
-    <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net7.0|x64'">
-      <NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
-    </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
+		<NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
+	</PropertyGroup>
 
-    <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net7.0|x64'">
-      <NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
-    </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)'=='Release'">
+		<NoWarn>1701;1702;IDE0063;IDE0079</NoWarn>
+		<SelfContained>true</SelfContained>
+		<RuntimeIdentifier Condition="'$(RuntimeIdentifier)'==''">win-x64</RuntimeIdentifier>
+		<PublishSingleFile>true</PublishSingleFile>
+		<PublishTrimmed>true</PublishTrimmed>
+		<TrimMode>full</TrimMode>
+		<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+		<PublishReadyToRun>false</PublishReadyToRun>
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<StackTraceSupport>false</StackTraceSupport>
+		<DebuggerSupport>false</DebuggerSupport>
+		<EventSourceSupport>false</EventSourceSupport>
+		<MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+		<SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+		<TrimmerSingleWarn>true</TrimmerSingleWarn>
+	</PropertyGroup>
 
-    <ItemGroup>
-        <PackageReference Include="Xbim.Essentials" Version="6.0.445" />
-    </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Xbim.Essentials" Version="6.0.587" />
+	</ItemGroup>
 
+	<ItemGroup>
+		<Compile Remove="ifc-metadata.Generators/**/*.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>ifc-metadata.Tests</_Parameter1>
+		</AssemblyAttribute>
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>ifc-metadata.Benchmarks</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
 </Project>
+

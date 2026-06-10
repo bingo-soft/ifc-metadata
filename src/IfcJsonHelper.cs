@@ -2,63 +2,60 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 
-namespace Bingosoft.Net.IfcMetadata
+namespace Bingosoft.Net.IfcMetadata;
+
+internal static class IfcJsonHelper
 {
-    internal static class IfcJsonHelper
+    private static readonly JsonWriterOptions Jwo = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    internal static void ToJson(FileInfo jsonTargetFile, ref MetadataExtractor metadata)
     {
-        private static readonly JsonWriterOptions Jwo = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        using var stream = File.OpenWrite(jsonTargetFile.FullName);
+        using var writer = new Utf8JsonWriter(stream, Jwo);
+        writer.WriteStartObject();
 
-        internal static void ToJson(FileInfo jsonTargetFile, ref MetadataExtractor metadata)
+        writer.WriteString("id", metadata.Id);
+        writer.WriteString("projectId", metadata.ProjectId);
+        writer.WriteString("author", metadata.Author);
+        writer.WriteString("createdAt", metadata.CreatedAt);
+        writer.WriteString("schema", metadata.Schema);
+        writer.WriteString("creatingApplication", metadata.CreatingApplication);
+
+        writer.WriteStartObject("metaObjects");
+
+        foreach (var item in metadata.MetaObjects)
         {
-            using var stream = File.OpenWrite(jsonTargetFile.FullName);
-            using (var writer = new Utf8JsonWriter(stream, Jwo))
+            writer.WriteStartObject(item.Id);
+
+            writer.WriteString("id", item.Id);
+            writer.WriteString("name", item.Name);
+            writer.WriteString("type", item.Type);
+            writer.WriteString("parent", item.Parent);
+
+            if (item.PropertyIds?.Length > 0)
             {
-                writer.WriteStartObject();
+                writer.WriteStartArray("properties");
 
-                writer.WriteString("id", metadata.Id);
-                writer.WriteString("projectId", metadata.ProjectId);
-                writer.WriteString("author", metadata.Author);
-                writer.WriteString("createdAt", metadata.CreatedAt);
-                writer.WriteString("schema", metadata.Schema);
-                writer.WriteString("creatingApplication", metadata.CreatingApplication);
-
-                writer.WriteStartObject("metaObjects");
-
-                foreach (var item in metadata.MetaObjects)
+                foreach (var propertyId in item.PropertyIds)
                 {
-                    writer.WriteStartObject(item.Id);
-
-                    writer.WriteString("id", item.Id);
-                    writer.WriteString("name", item.Name);
-                    writer.WriteString("type", item.Type);
-                    writer.WriteString("parent", item.Parent);
-
-                    if (item.PropertyIds?.Length > 0)
-                    {
-                        writer.WriteStartArray("properties");
-
-                        foreach (var propertyId in item.PropertyIds)
-                        {
-                            writer.WriteStringValue(propertyId);
-                        }
-
-                        writer.WriteEndArray();
-                    }
-                    else
-                    {
-                        writer.WriteNull("properties");
-                    }
-
-                    writer.WriteString("material_id", item.Material);
-                    writer.WriteString("type_id", item.TypeId);
-
-                    writer.WriteEndObject();
+                    writer.WriteStringValue(propertyId);
                 }
 
-                writer.WriteEndObject();
-
-                writer.WriteEndObject();
+                writer.WriteEndArray();
             }
+            else
+            {
+                writer.WriteNull("properties");
+            }
+
+            writer.WriteString("material_id", item.Material);
+            writer.WriteString("type_id", item.TypeId);
+
+            writer.WriteEndObject();
         }
+
+        writer.WriteEndObject();
+
+        writer.WriteEndObject();
     }
 }

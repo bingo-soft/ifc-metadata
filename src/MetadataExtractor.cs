@@ -1,156 +1,184 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using Xbim.Ifc;
 using Xbim.Ifc4.Interfaces;
-using Xbim.Ifc4.MaterialResource;
 
-#pragma warning disable RCS1213, IDE0051, S1144
 
-namespace Bingosoft.Net.IfcMetadata
+namespace Bingosoft.Net.IfcMetadata;
+
+internal sealed class MetadataExtractor
 {
-    internal sealed class MetadataExtractor
+    /// <summary>
+    ///   The Id field is populated with the name of the project.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string Id { get; set; }
+
+    /// <summary>
+    ///   The GlobalId of the project.
+    /// </summary>
+    [JsonPropertyName("projectId")]
+    public string ProjectId { get; set; }
+
+    /// <summary>
+    ///   The author of the project.
+    /// </summary>
+    [JsonPropertyName("author")]
+    public string Author { get; set; }
+
+    /// <summary>
+    ///   The creation date of the project.
+    /// </summary>
+    [JsonPropertyName("createdAt")]
+    public string CreatedAt { get; set; }
+
+    /// <summary>
+    ///   The schema of the ifc model.
+    /// </summary>
+    [JsonPropertyName("schema")]
+    public string Schema { get; set; }
+
+    /// <summary>
+    ///   The application with which the model was created.
+    /// </summary>
+    [JsonPropertyName("creatingApplication")]
+    public string CreatingApplication { get; set; }
+
+    /// <summary>
+    ///   A list of all building elements as MetaObjects within the project.
+    /// </summary>
+    [JsonPropertyName("metaObjects")]
+    public List<Metadata> MetaObjects { get; set; }
+
+    /// <summary>
+    ///   The convenience initialiser creates and returns an instance of the
+    ///   MetaModel by parsing the IFC at the provided path.
+    /// </summary>
+    /// <param name="ifcPath">A string path of the IFC path.</param>
+    /// <returns>Returns the complete MetaModel of the IFC.</returns>
+    public static MetadataExtractor FromIfc(FileInfo ifcPath)
     {
-        /// <summary>
-        ///   The Id field is populated with the name of the project.
-        /// </summary>
-        [JsonPropertyName("id")]
-        public string Id { get; set; }
+        using var model = IfcStore.Open(ifcPath.FullName);
+        var project = GetProject(model)
+                      ?? throw new InvalidDataException("IFC project root (IIfcProject) was not found.");
 
-        /// <summary>
-        ///   The GlobalId of the project.
-        /// </summary>
-        [JsonPropertyName("projectId")]
-        public string ProjectId { get; set; }
+        var header = model.Header;
+        var extractor = new MetadataExtractor();
+        extractor.Init(
+            project.Name,
+            project.GlobalId,
+            GetAuthor(header.FileName.AuthorName),
+            header.TimeStamp,
+            header.SchemaVersion,
+            header.CreatingApplication);
 
-        /// <summary>
-        ///   The author of the project.
-        /// </summary>
-        [JsonPropertyName("author")]
-        public string Author { get; set; }
+        extractor.MetaObjects = ExtractHierarchy(project);
+        return extractor;
+    }
 
-        /// <summary>
-        ///   The creation date of the project.
-        /// </summary>
-        [JsonPropertyName("createdAt")]
-        public string CreatedAt { get; set; }
+    private void Init(string id, string projectId, string author, string createdAt, string schema, string creatingApplication)
+    {
+        Id = id;
+        ProjectId = projectId;
+        Author = author;
+        CreatedAt = createdAt;
+        Schema = schema;
+        CreatingApplication = creatingApplication;
+    }
 
-        /// <summary>
-        ///   The schema of the ifc model.
-        /// </summary>
-        [JsonPropertyName("schema")]
-        public string Schema { get; set; }
-
-        /// <summary>
-        ///   The application with which the model was created.
-        /// </summary>
-        [JsonPropertyName("creatingApplication")]
-        public string CreatingApplication { get; set; }
-
-        /// <summary>
-        ///   A list of all building elements as MetaObjects within the project.
-        /// </summary>
-        [JsonPropertyName("metaObjects")]
-        public List<Metadata> MetaObjects { get; set; }
-
-        /// <summary>
-        ///   The convenience initialiser creates and returns an instance of the
-        ///   MetaModel by parsing the IFC at the provided path.
-        /// </summary>
-        /// <param name="ifcPath">A string path of the IFC path.</param>
-        /// <returns>Returns the complete MetaModel of the IFC.</returns>
-        public static MetadataExtractor FromIfc(FileInfo ifcPath)
+    private static IIfcProject GetProject(IfcStore model)
+    {
+        foreach (var instance in model.Instances)
         {
-            using (var model = IfcStore.Open(ifcPath.FullName))
+            if (instance is IIfcProject project)
             {
-                var project = model.Instances.FirstOrDefault<IIfcProject>();
-
-                var header = model.Header;
-                var extractor = new MetadataExtractor();
-                extractor.Init(
-                            project.Name,
-                            project.GlobalId,
-                            GetAuthor(header.FileName.AuthorName),
-                            header.TimeStamp,
-                            header.SchemaVersion,
-                            header.CreatingApplication);
-
-                extractor.MetaObjects = ExtractHierarchy(project);
-                return extractor;
+                return project;
             }
         }
 
-        private void Init(string id, string projectId, string author, string createdAt, string schema, string creatingApplication)
+        return null;
+    }
+
+    private static string GetAuthor(IList<string> authors)
+    {
+        if (authors.Count == 0)
         {
-            Id = id;
-            ProjectId = projectId;
-            Author = author;
-            CreatedAt = createdAt;
-            Schema = schema;
-            CreatingApplication = creatingApplication;
+            return string.Empty;
         }
 
-        private static string GetAuthor(IList<string> authors)
+        var totalLength = authors.Count - 1;
+        for (var i = 0; i < authors.Count; i++)
         {
-            StringBuilder sb = new StringBuilder();
-            foreach (var item in authors)
+            totalLength += authors[i]?.Length ?? 0;
+        }
+
+        return string.Create(totalLength, authors, static (destination, state) =>
+        {
+            var position = 0;
+            for (var i = 0; i < state.Count; i++)
             {
-                sb.Append(item);
-                if (!item.Equals(authors.LastOrDefault()))
+                var author = state[i];
+                if (!string.IsNullOrEmpty(author))
                 {
-                    sb.Append(';');
+                    author.AsSpan().CopyTo(destination[position..]);
+                    position += author.Length;
+                }
+
+                if (i < state.Count - 1)
+                {
+                    destination[position++] = ';';
                 }
             }
+        });
+    }
 
-            return sb.ToString();
+    private static List<Metadata> ExtractHierarchy(IIfcObjectDefinition objectDefinition, string parentId = null)
+    {
+        var metaObjects = new List<Metadata>();
+        ExtractHierarchy(metaObjects, objectDefinition, parentId);
+        return metaObjects;
+    }
+
+    private static void ExtractHierarchy(List<Metadata> metaObjects, IIfcObjectDefinition objectDefinition, string parentId = null)
+    {
+        var parentObject = new Metadata
+        {
+            Id = objectDefinition.GlobalId,
+            Name = objectDefinition.Name,
+            Type = IfcAccessors.GetRuntimeTypeName(objectDefinition),
+            Parent = parentId,
+            TypeId = IfcAccessors.GetTypedId(objectDefinition)
+        };
+
+        if (objectDefinition is not IIfcProject)
+        {
+            var parentProps = GetProperties((IIfcObject)objectDefinition);
+            if (parentProps.Length > 0)
+            {
+                parentObject.PropertyIds = parentProps;
+            }
         }
 
-        private static List<Metadata> ExtractHierarchy(IIfcObjectDefinition objectDefinition, string parentId = null)
+        parentObject.Material = IfcAccessors.GetMaterialId(objectDefinition);
+        metaObjects.Add(parentObject);
+
+        if (objectDefinition is IIfcSpatialStructureElement spatialElement)
         {
-            var metaObjects = new List<Metadata>();
-
-            var objectType = objectDefinition.GetType();
-            var parentObject = new Metadata
+            foreach (var relation in spatialElement.ContainsElements)
             {
-                Id = objectDefinition.GlobalId,
-                Name = objectDefinition.Name,
-                Type = objectType.Name,
-                Parent = parentId,
-                TypeId = GetTypedId(objectDefinition)
-            };
-
-            if (objectDefinition is not IIfcProject)
-            {
-                var parentProps = GetProperties((IIfcObject)objectDefinition);
-                if (parentProps.Length > 0)
+                foreach (var element in relation.RelatedElements)
                 {
-                    parentObject.PropertyIds = parentProps;
-                }
-            }
-
-            parentObject.Material = GetMaterialsV2(objectDefinition);
-
-            metaObjects.Add(parentObject);
-
-            if (objectDefinition is IIfcSpatialStructureElement spatialElement)
-            {
-                var containedElements = spatialElement.ContainsElements.SelectMany(rel => rel.RelatedElements);
-                foreach (var element in containedElements)
-                {
-                    var typeId = GetTypedId(element);
+                    var typeId = IfcAccessors.GetTypedId(element);
                     var mo = new Metadata
                     {
                         Id = element.GlobalId,
                         Name = element.Name,
-                        Type = element.GetType().Name,
+                        Type = IfcAccessors.GetRuntimeTypeName(element),
                         Parent = spatialElement.GlobalId,
-                        TypeId = typeId
+                        TypeId = typeId,
                     };
 
                     var props = GetProperties(element);
@@ -159,143 +187,50 @@ namespace Bingosoft.Net.IfcMetadata
                         mo.PropertyIds = props;
                     }
 
-                    mo.Material = GetMaterialsV2(element);
+                    mo.Material = IfcAccessors.GetMaterialId(element);
 
                     metaObjects.Add(mo);
-                    ExtractRelatedObjects(element, ref metaObjects, mo.Id);
+                    ExtractRelatedObjects(element, metaObjects, mo.Id);
                 }
             }
-
-            ExtractRelatedObjects(objectDefinition, ref metaObjects, parentObject.Id);
-
-            return metaObjects;
         }
 
-        private static string GetTypedId(IIfcObjectDefinition element)
+        ExtractRelatedObjects(objectDefinition, metaObjects, parentObject.Id);
+    }
+
+
+
+    private static void ExtractRelatedObjects(IIfcObjectDefinition objectDefinition, List<Metadata> metaObjects, string parentObjId)
+    {
+        foreach (var relation in objectDefinition.IsDecomposedBy)
         {
-            var isTypedByInfo = element.GetType().GetProperty("IsTypedBy");
-            if (isTypedByInfo is null) return null;
-
-            var isTypedByValue = isTypedByInfo.GetValue(element);
-            if (isTypedByValue is null) return null;
-
-            return GetGlobalId(isTypedByValue);
-        }
-
-        private static string GetGlobalId(object obj)
-        {
-            var isTypedByGlobalIdInfo = obj.GetType().GetProperty("GlobalId");
-            if (isTypedByGlobalIdInfo is null) return null;
-
-            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo.GetValue(obj);
-            switch (isTypedByGlobalIdValue)
+            foreach (var item in relation.RelatedObjects)
             {
-                case Xbim.Ifc2x3.UtilityResource.IfcGloballyUniqueId Global2x3Id:
-                {
-                    return Global2x3Id.Value.ToString();
-                }
-                case Xbim.Ifc4.UtilityResource.IfcGloballyUniqueId Gloval4Id:
-                {
-                    return Gloval4Id.Value.ToString();
-                }
-                default:
-                    return null;
+                ExtractHierarchy(metaObjects, item, parentObjId);
             }
         }
+    }
 
-        private static int? GetEntityLabel(object obj)
+    private static string[] GetProperties(IIfcObject product)
+    {
+        var propertyIds = new List<string>();
+        foreach (var relation in product.IsDefinedBy)
         {
-            var isTypedByGlobalIdInfo = obj.GetType().GetProperty("EntityLabel");
-            if (isTypedByGlobalIdInfo is null) return null;
-
-            var isTypedByGlobalIdValue = isTypedByGlobalIdInfo.GetValue(obj);
-            return (int)isTypedByGlobalIdValue;
-        }
-
-        private static string[] GetMaterials(IIfcObjectDefinition objectDefinition)
-        {
-            var material = objectDefinition.GetType().GetProperty("Material");
-            if (material == null) return Array.Empty<string>();
-
-            var materialsv = material.GetValue(objectDefinition);
-            if (materialsv == null) return Array.Empty<string>();
-
-            var materials = materialsv.GetType().GetProperty("Materials");
-            if (materials != null)
+            var relatedPropertyDefinition = relation.RelatingPropertyDefinition;
+            if (relatedPropertyDefinition is null)
             {
-                var maters = materials.GetValue(materialsv);
-                switch (maters)
-                {
-                    case Xbim.Ifc4.ItemSet<IfcMaterial> mat1:
-                    {
-                        List<string> materoalList = new List<string>(mat1.Count);
-                        foreach (var item in mat1)
-                        {
-                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                        }
-
-                        return materoalList.ToArray();
-                    }
-                    case Xbim.Ifc2x3.ItemSet<Xbim.Ifc2x3.MaterialResource.IfcMaterial> mat2:
-                    {
-                        List<string> materoalList = new List<string>(mat2.Count);
-                        foreach (var item in mat2)
-                        {
-                            materoalList.Add($"IfcMaterial_{item.EntityLabel}");
-                        }
-
-                        return materoalList.ToArray();
-                    }
-                    default:
-                        return Array.Empty<string>();
-                }
+                continue;
             }
-            else
+
+            foreach (var propertyDefinition in relatedPropertyDefinition.PropertySetDefinitions)
             {
-                switch (materialsv)
+                if (propertyDefinition is IIfcPropertySet propertySet)
                 {
-                    case IfcMaterial material4:
-                    {
-                        return new[] { $"IfcMaterial_{material4.EntityLabel}" };
-                    }
-                    case Xbim.Ifc2x3.MaterialResource.IfcMaterial material2x3:
-                    {
-                        return new[] { $"IfcMaterial_{material2x3.EntityLabel}" };
-                    }
-                    default:
-                        return Array.Empty<string>();
+                    propertyIds.Add(propertySet.GlobalId.Value.ToString());
                 }
             }
         }
 
-        private static string GetMaterialsV2(IIfcObjectDefinition objectDefinition)
-        {
-            var material = objectDefinition.GetType().GetProperty("Material");
-            if (material is null) return null;
-
-            var materialsv = material.GetValue(objectDefinition);
-            if (materialsv is null) return null;
-
-            var entLabel = GetEntityLabel(materialsv);
-            return entLabel is null ? null : $"{objectDefinition.Material.ExpressType.Name}_{entLabel}";
-        }
-
-        private static void ExtractRelatedObjects(IIfcObjectDefinition objectDefinition, ref List<Metadata> metaObjects, string parentObjId)
-        {
-            var relatedObjects = objectDefinition.IsDecomposedBy.SelectMany(r => r.RelatedObjects);
-            foreach (var item in relatedObjects)
-            {
-                var children = ExtractHierarchy(item, parentObjId);
-                metaObjects.AddRange(children);
-            }
-        }
-
-        private static string[] GetProperties(IIfcObject product)
-        {
-            return product.IsDefinedBy
-                          .SelectMany(r => r.RelatingPropertyDefinition.PropertySetDefinitions)
-                          .OfType<IIfcPropertySet>()
-                          .Select(pset => pset.GlobalId.Value.ToString()).ToArray();
-        }
+        return propertyIds.Count == 0 ? [] : propertyIds.ToArray();
     }
 }
