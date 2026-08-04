@@ -66,9 +66,9 @@ internal sealed class FastStepMmfIntermediateWriter : IDisposable
         const uint prime = 16777619;
 
         var hash = offsetBasis;
-        for (var i = 0; i < data.Length; i++)
+        foreach (var t in data)
         {
-            hash ^= data[i];
+            hash ^= t;
             hash *= prime;
         }
 

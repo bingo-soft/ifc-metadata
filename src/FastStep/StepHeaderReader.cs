@@ -19,7 +19,7 @@ internal static class StepHeaderReader
         return ParseHeaderContent(content);
     }
 
-    internal static string ReadHeaderSection(TextReader reader)
+    private static string ReadHeaderSection(TextReader reader)
     {
         var headerBuilder = new StringBuilder(1024);
         var inHeaderSection = false;

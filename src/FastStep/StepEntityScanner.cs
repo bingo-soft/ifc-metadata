@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+
 using Bingosoft.Net.IfcMetadata.FastStep.Mmf;
 
 namespace Bingosoft.Net.IfcMetadata.FastStep;

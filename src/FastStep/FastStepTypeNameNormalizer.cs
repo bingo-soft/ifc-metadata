@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
-
 namespace Bingosoft.Net.IfcMetadata.FastStep;
 
 internal static class FastStepTypeNameNormalizer
@@ -23,7 +22,7 @@ internal static class FastStepTypeNameNormalizer
             : rawTypeName.Trim();
     }
 
-        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Canonical IFC type map is built from xBIM schema assemblies at startup.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Canonical IFC type map is built from xBIM schema assemblies at startup.")]
     private static Dictionary<string, string> CreateCanonicalTypeMap()
 
     {
@@ -34,7 +33,7 @@ internal static class FastStepTypeNameNormalizer
             typeof(Xbim.Ifc4.Kernel.IfcProject).Assembly,
         ];
 
-                foreach (var assembly in assemblies)
+        foreach (var assembly in assemblies)
         {
             foreach (var type in assembly.ExportedTypes)
             {

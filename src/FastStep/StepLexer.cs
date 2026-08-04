@@ -9,12 +9,7 @@ internal static class StepLexer
 {
     private const int DefaultBufferSize = 128 * 1024;
 
-    internal static IEnumerable<StepEntityToken> EnumerateEntities(TextReader reader)
-    {
-        return EnumerateEntities(reader, captureRawArguments: true);
-    }
-
-    internal static IEnumerable<StepEntityToken> EnumerateEntities(TextReader reader, bool captureRawArguments)
+    internal static IEnumerable<StepEntityToken> EnumerateEntities(TextReader reader, bool captureRawArguments = true)
     {
         var buffer = ArrayPool<char>.Shared.Rent(DefaultBufferSize);
         var state = LexerState.OutsideEntity;
@@ -78,7 +73,33 @@ internal static class StepLexer
                                     break;
                                 }
 
+                                if (char.IsWhiteSpace(ch) && idDigits > 0)
+                                {
+                                    state = LexerState.BeforeEntityAssignment;
+                                    break;
+                                }
+
                                 if (ch == '=' && idDigits > 0)
+                                {
+                                    state = LexerState.BeforeEntityType;
+                                    break;
+                                }
+
+                                ResetEntityCandidate(ref state, typeBuilder, argsBuilder);
+                                if (ch == '#')
+                                {
+                                    reprocessCurrentCharacter = true;
+                                }
+
+                                break;
+
+                            case LexerState.BeforeEntityAssignment:
+                                if (char.IsWhiteSpace(ch))
+                                {
+                                    break;
+                                }
+
+                                if (ch == '=')
                                 {
                                     state = LexerState.BeforeEntityType;
                                     break;
@@ -296,6 +317,7 @@ internal static class StepLexer
     {
         OutsideEntity,
         ReadingEntityId,
+        BeforeEntityAssignment,
         BeforeEntityType,
         ReadingEntityType,
         BeforeArguments,

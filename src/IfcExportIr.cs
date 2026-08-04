@@ -47,13 +47,13 @@ internal readonly struct MetaRow
 
 internal sealed class IfcExportIr
 {
-    private readonly Dictionary<string, int> stringToIndex;
-    private readonly List<string> strings;
+    private readonly Dictionary<string, int> _stringToIndex;
+    private readonly List<string> _strings;
 
     internal IfcExportIr(int metaRowCapacity)
     {
-        stringToIndex = new Dictionary<string, int>(StringComparer.Ordinal);
-        strings = new List<string>(metaRowCapacity * 4);
+        _stringToIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        _strings = new List<string>(metaRowCapacity * 4);
         Rows = new List<MetaRow>(metaRowCapacity);
         PropertyStringIndexes = new List<int>(metaRowCapacity);
     }
@@ -64,14 +64,14 @@ internal sealed class IfcExportIr
 
     internal int InternRequired(string value)
     {
-        if (stringToIndex.TryGetValue(value, out var existingIndex))
+        if (_stringToIndex.TryGetValue(value, out var existingIndex))
         {
             return existingIndex;
         }
 
-        var index = strings.Count;
-        strings.Add(value);
-        stringToIndex.Add(value, index);
+        var index = _strings.Count;
+        _strings.Add(value);
+        _stringToIndex.Add(value, index);
         return index;
     }
 
@@ -82,12 +82,12 @@ internal sealed class IfcExportIr
 
     internal string ResolveNullable(int stringIndex)
     {
-        return stringIndex < 0 ? null : strings[stringIndex];
+        return stringIndex < 0 ? null : _strings[stringIndex];
     }
 
     internal string ResolveRequired(int stringIndex)
     {
-        return strings[stringIndex];
+        return _strings[stringIndex];
     }
 }
 
@@ -142,9 +142,8 @@ internal static class IfcExportIrPipeline
     internal static void WriteMetaObjects(Utf8JsonWriter writer, IfcExportIr ir)
     {
         var rows = ir.Rows;
-        for (var i = 0; i < rows.Count; i++)
+        foreach (var row in rows)
         {
-            var row = rows[i];
             var objectId = ir.ResolveRequired(row.IdIdx);
             var name = ir.ResolveNullable(row.NameIdx);
             var type = ir.ResolveRequired(row.TypeIdx);

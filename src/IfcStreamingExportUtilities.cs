@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 using Xbim.Ifc;
@@ -28,18 +29,14 @@ internal static class IfcStreamingExportUtilities
         return new FileStream(jsonTargetFile.FullName, options);
     }
 
-    internal static string GetAuthor(IList<string> authors)
+    private static string GetAuthor(IList<string> authors)
     {
         if (authors.Count == 0)
         {
             return string.Empty;
         }
 
-        var totalLength = authors.Count - 1;
-        for (var i = 0; i < authors.Count; i++)
-        {
-            totalLength += authors[i]?.Length ?? 0;
-        }
+        var totalLength = authors.Count - 1 + authors.Sum(t => t?.Length ?? 0);
 
         return string.Create(totalLength, authors, static (destination, state) =>
         {
@@ -130,7 +127,7 @@ internal static class IfcStreamingExportUtilities
         return counts;
     }
 
-    internal static IfcExportIr BuildExportIr(
+    private static IfcExportIr BuildExportIr(
         List<TraversalNode> bufferedTraversal,
         Dictionary<string, int> counts,
         int uniqueMetaObjects,
@@ -141,9 +138,8 @@ internal static class IfcStreamingExportUtilities
 
         progressReporter?.Invoke(processedMetaObjects, uniqueMetaObjects);
 
-        for (var i = 0; i < bufferedTraversal.Count; i++)
+        foreach (var node in bufferedTraversal)
         {
-            var node = bufferedTraversal[i];
             if (string.IsNullOrWhiteSpace(node.ObjectId) || !counts.TryGetValue(node.ObjectId, out var remaining))
             {
                 continue;

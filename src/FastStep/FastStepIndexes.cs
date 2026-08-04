@@ -20,7 +20,7 @@ internal sealed class FastStepIndexes
 
     internal FastStepStringPool StringPool { get; } = new();
 
-    internal int[] EntityIdToSlot { get; private set; }
+    private int[] EntityIdToSlot { get; set; }
 
     internal int EntityCount { get; private set; }
 
@@ -233,9 +233,8 @@ internal readonly record struct FastStepAdjacency(int[] Offsets, int[] Edges)
 
         var offsets = new int[indexes.EntityCount + 1];
 
-        for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
+        foreach (var edge in edges)
         {
-            var edge = edges[edgeIndex];
             var parentSlot = indexes.GetSlotOrMissing(edge.ParentEntityId);
             var childSlot = indexes.GetSlotOrMissing(edge.ChildEntityId);
             if (parentSlot < 0 || childSlot < 0)
@@ -255,9 +254,8 @@ internal readonly record struct FastStepAdjacency(int[] Offsets, int[] Edges)
         var cursors = new int[offsets.Length];
         Array.Copy(offsets, cursors, offsets.Length);
 
-        for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
+        foreach (var edge in edges)
         {
-            var edge = edges[edgeIndex];
             var parentSlot = indexes.GetSlotOrMissing(edge.ParentEntityId);
             var childSlot = indexes.GetSlotOrMissing(edge.ChildEntityId);
             if (parentSlot < 0 || childSlot < 0)
@@ -336,5 +334,3 @@ internal sealed class FastStepStringPool
             : null;
     }
 }
-
-

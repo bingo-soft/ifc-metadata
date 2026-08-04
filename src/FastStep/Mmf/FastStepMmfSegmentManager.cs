@@ -26,10 +26,7 @@ internal sealed class FastStepMmfSegmentManager : IDisposable
         FastStepStoreKind storeKind,
         long segmentSize = 256L * 1024 * 1024)
     {
-        if (segmentSize <= FastStepSegmentHeader.Size)
-        {
-            throw new ArgumentOutOfRangeException(nameof(segmentSize));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(segmentSize, FastStepSegmentHeader.Size);
 
         _rootDirectory = rootDirectory ?? throw new ArgumentNullException(nameof(rootDirectory));
         _storePrefix = string.IsNullOrWhiteSpace(storePrefix) ? throw new ArgumentException("Value cannot be null or whitespace.", nameof(storePrefix)) : storePrefix;
@@ -269,7 +266,7 @@ internal sealed class FastStepMmfSegmentManager : IDisposable
 
         internal uint SegmentId { get; }
 
-        internal MemoryMappedFile Mmf { get; }
+        private MemoryMappedFile Mmf { get; }
 
         internal MemoryMappedViewAccessor Accessor { get; }
 

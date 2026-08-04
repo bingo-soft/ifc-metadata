@@ -9,7 +9,6 @@ namespace Bingosoft.Net.IfcMetadata.FastStep.Mmf;
 
 internal sealed class FastStepMmfIntermediateReader : IDisposable
 {
-    private readonly string _directoryPath;
     private readonly Dictionary<int, FastStepEntityRecord> _entityById = [];
     private readonly Dictionary<uint, StringSegmentAccessor> _stringSegments = [];
 
@@ -22,11 +21,11 @@ internal sealed class FastStepMmfIntermediateReader : IDisposable
             throw new ArgumentException("Value cannot be null or whitespace.", nameof(directoryPath));
         }
 
-        _directoryPath = directoryPath;
+        DirectoryPath = directoryPath;
         LoadEntityIndex();
     }
 
-    internal string DirectoryPath => _directoryPath;
+    internal string DirectoryPath { get; }
 
     internal bool TryGetEntityRecord(int entityId, out FastStepEntityRecord record)
     {
@@ -38,13 +37,13 @@ internal sealed class FastStepMmfIntermediateReader : IDisposable
     {
         ThrowIfDisposed();
 
-        var files = Directory.GetFiles(_directoryPath, "object_*.seg", SearchOption.TopDirectoryOnly);
+        var files = Directory.GetFiles(DirectoryPath, "object_*.seg", SearchOption.TopDirectoryOnly);
         Array.Sort(files, StringComparer.Ordinal);
 
         var recordSize = Marshal.SizeOf<FastStepObjectRecord>();
-        for (var i = 0; i < files.Length; i++)
+        foreach (var t in files)
         {
-            using var stream = new FileStream(files[i], FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var stream = new FileStream(t, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var mmf = MemoryMappedFile.CreateFromFile(stream, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
             using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
 
@@ -103,13 +102,13 @@ internal sealed class FastStepMmfIntermediateReader : IDisposable
 
     private void LoadEntityIndex()
     {
-        var files = Directory.GetFiles(_directoryPath, "entity_*.seg", SearchOption.TopDirectoryOnly);
+        var files = Directory.GetFiles(DirectoryPath, "entity_*.seg", SearchOption.TopDirectoryOnly);
         Array.Sort(files, StringComparer.Ordinal);
 
         var recordSize = Marshal.SizeOf<FastStepEntityRecord>();
-        for (var i = 0; i < files.Length; i++)
+        foreach (var t in files)
         {
-            LoadEntitySegment(files[i], recordSize);
+            LoadEntitySegment(t, recordSize);
         }
     }
 
@@ -153,7 +152,7 @@ internal sealed class FastStepMmfIntermediateReader : IDisposable
 
     private StringSegmentAccessor OpenStringSegment(uint segmentId)
     {
-        var path = Path.Combine(_directoryPath, $"string_{segmentId:D6}.seg");
+        var path = Path.Combine(DirectoryPath, $"string_{segmentId:D6}.seg");
         if (!File.Exists(path))
         {
             throw new FileNotFoundException("String MMF segment was not found.", path);
@@ -208,7 +207,7 @@ internal sealed class FastStepMmfIntermediateReader : IDisposable
             Header = header;
         }
 
-        internal MemoryMappedFile Mmf { get; }
+        private MemoryMappedFile Mmf { get; }
 
         internal MemoryMappedViewAccessor Accessor { get; }
 

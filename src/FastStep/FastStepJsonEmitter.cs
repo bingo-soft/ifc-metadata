@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+
 using Bingosoft.Net.IfcMetadata.FastStep.Mmf;
 
 namespace Bingosoft.Net.IfcMetadata.FastStep;
@@ -30,9 +31,19 @@ internal static class FastStepJsonEmitter
         FastStepMmfIntermediateReader intermediateReader = null,
         Action<string> diagnosticsLogger = null)
     {
-        if (indexes.Project is null || string.IsNullOrWhiteSpace(indexes.Project.Value.GlobalId))
+        if (indexes.EntityCount == 0)
         {
-            throw new InvalidOperationException("IFC project root (IFCPROJECT) was not found in STEP data.");
+            throw new InvalidOperationException("Fast-step scan found 0 STEP entities; check STEP entity assignment formatting and DATA section contents.");
+        }
+
+        if (indexes.Project is null)
+        {
+            throw new InvalidOperationException($"IFC project root (IFCPROJECT) was not found after scanning {indexes.EntityCount} STEP entities.");
+        }
+
+        if (string.IsNullOrWhiteSpace(indexes.Project.Value.GlobalId))
+        {
+            throw new InvalidOperationException($"IFC project root (IFCPROJECT #{indexes.Project.Value.EntityId}) was found, but its GlobalId is empty.");
         }
 
         return intermediateReader is null
@@ -278,9 +289,9 @@ internal static class FastStepJsonEmitter
     private static void CleanupObjectSegments(string directoryPath)
     {
         var files = Directory.GetFiles(directoryPath, "object_*.seg", SearchOption.TopDirectoryOnly);
-        for (var i = 0; i < files.Length; i++)
+        foreach (var t in files)
         {
-            File.Delete(files[i]);
+            File.Delete(t);
         }
     }
 
@@ -395,9 +406,9 @@ internal static class FastStepJsonEmitter
             telemetry.PropertySetHits++;
             writer.WritePropertyName("properties");
             writer.WriteStartArray();
-            for (var i = 0; i < psetIds.Count; i++)
+            foreach (var t in psetIds)
             {
-                writer.WriteStringValue(psetIds[i]);
+                writer.WriteStringValue(t);
             }
 
             writer.WriteEndArray();
@@ -457,10 +468,8 @@ internal static class FastStepJsonEmitter
         const ulong fnvPrime = 1099511628211;
 
         var hash = fnvOffset;
-        for (var i = 0; i < objectId.Length; i++)
+        foreach (var ch in objectId)
         {
-            var ch = objectId[i];
-
             hash ^= (byte)(ch & 0xFF);
             hash *= fnvPrime;
 
@@ -532,7 +541,7 @@ internal static class FastStepJsonEmitter
         }
 
         telemetry.NameMisses++;
-        return name;
+        return null;
     }
 
     private static string TryReadStringArgumentFromMmf(FastStepMmfIntermediateReader intermediateReader, int entityId, int argumentIndex)

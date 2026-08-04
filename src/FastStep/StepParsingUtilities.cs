@@ -143,7 +143,7 @@ internal static class StepParsingUtilities
             return null;
         }
 
-        if (trimmed.SequenceEqual("$") || trimmed.SequenceEqual("*"))
+        if (trimmed is "$" || trimmed is "*")
         {
             return null;
         }
@@ -151,19 +151,11 @@ internal static class StepParsingUtilities
         var isQuoted = trimmed.Length >= 2 && trimmed[0] == '\'' && trimmed[^1] == '\'';
         var content = isQuoted ? trimmed[1..^1] : trimmed;
 
-        if (isQuoted)
-        {
-            if (content.IndexOfAny('\\', '\'') < 0)
-            {
-                return content.ToString();
-            }
-
-            return DecodeStepEscapes(content, decodeDoubledQuotes: true);
-        }
-
-        return content.IndexOf('\\') < 0
-            ? content.ToString()
-            : DecodeStepEscapes(content, decodeDoubledQuotes: false);
+        if (!isQuoted)
+            return content.IndexOf('\\') < 0
+                ? content.ToString()
+                : DecodeStepEscapes(content, decodeDoubledQuotes: false);
+        return content.IndexOfAny('\\', '\'') < 0 ? content.ToString() : DecodeStepEscapes(content, decodeDoubledQuotes: true);
     }
 
     internal static int? ParseStepReference(string token)
@@ -403,14 +395,12 @@ internal static class StepParsingUtilities
     {
         for (var i = startIndex; i + 3 < value.Length; i++)
         {
-            if (value[i] == '\\'
-                && IsX(value[i + 1])
-                && value[i + 2] == '0'
-                && value[i + 3] == '\\')
-            {
-                markerIndex = i;
-                return true;
-            }
+            if (value[i] != '\\'
+                || !IsX(value[i + 1])
+                || value[i + 2] != '0'
+                || value[i + 3] != '\\') continue;
+            markerIndex = i;
+            return true;
         }
 
         markerIndex = -1;
@@ -502,4 +492,3 @@ internal static class StepParsingUtilities
         }
     }
 }
-

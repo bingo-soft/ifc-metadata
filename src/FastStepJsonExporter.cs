@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+
 using Bingosoft.Net.IfcMetadata.FastStep;
 using Bingosoft.Net.IfcMetadata.FastStep.Mmf;
 
@@ -28,6 +29,7 @@ internal static class FastStepJsonExporter
             });
         scanStopwatch.Stop();
         diagnosticsLogger?.Invoke($"fast-step: scan complete schema={scanResult.Header.Schema} entities={scanResult.Indexes.EntityCount} elapsedMs={scanStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
+        LogScanShapeDiagnostics(scanResult, diagnosticsLogger);
 
         diagnosticsLogger?.Invoke("fast-step: emit start");
         var emitStopwatch = Stopwatch.StartNew();
@@ -62,6 +64,7 @@ internal static class FastStepJsonExporter
         var scanResult = StepEntityScanner.ScanWithHeader(ifcSourceFile, scanOptions with { ProgressReporter = scanProgressReporter, DiagnosticsLogger = diagnosticsLogger });
         scanStopwatch.Stop();
         diagnosticsLogger?.Invoke($"fast-step: scan complete schema={scanResult.Header.Schema} entities={scanResult.Indexes.EntityCount} elapsedMs={scanStopwatch.Elapsed.TotalMilliseconds.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}");
+        LogScanShapeDiagnostics(scanResult, diagnosticsLogger);
 
         if (!scanOptions.UseMmfIntermediateStore)
         {
@@ -102,6 +105,29 @@ internal static class FastStepJsonExporter
         return spillReport;
     }
 
+    private static void LogScanShapeDiagnostics(FastStepScanResult scanResult, Action<string> diagnosticsLogger)
+    {
+        if (diagnosticsLogger is null)
+        {
+            return;
+        }
+
+        if (scanResult.Indexes.EntityCount == 0)
+        {
+            diagnosticsLogger("fast-step scan warning: scan found 0 STEP entities; check STEP entity assignment formatting and DATA section contents.");
+            return;
+        }
+
+        if (scanResult.Indexes.Project is null)
+        {
+            diagnosticsLogger($"fast-step scan warning: IFCPROJECT was not found after scanning {scanResult.Indexes.EntityCount} STEP entities.");
+        }
+        else if (string.IsNullOrWhiteSpace(scanResult.Indexes.Project.Value.GlobalId))
+        {
+            diagnosticsLogger($"fast-step scan warning: IFCPROJECT #{scanResult.Indexes.Project.Value.EntityId} was found, but its GlobalId is empty.");
+        }
+    }
+
     private static Action<int, int> CreatePhaseProgressReporter(Action<int, int> progressReporter, int phaseStart, int phaseEnd)
     {
         if (progressReporter is null)
@@ -122,4 +148,3 @@ internal static class FastStepJsonExporter
         };
     }
 }
-

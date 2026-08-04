@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 using Xbim.Ifc;
@@ -109,11 +110,7 @@ internal sealed class MetadataExtractor
             return string.Empty;
         }
 
-        var totalLength = authors.Count - 1;
-        for (var i = 0; i < authors.Count; i++)
-        {
-            totalLength += authors[i]?.Length ?? 0;
-        }
+        var totalLength = authors.Count - 1 + authors.Sum(t => t?.Length ?? 0);
 
         return string.Create(totalLength, authors, static (destination, state) =>
         {

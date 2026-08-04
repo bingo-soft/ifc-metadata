@@ -141,6 +141,25 @@ public sealed class StepEntityScannerTests
     }
 
     [Fact]
+    public void Scan_AcceptsWhitespaceBetweenEntityIdAndAssignment()
+    {
+        const string step = """
+        ISO-10303-21;
+        DATA;
+        #10 = IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        using var reader = new StringReader(step);
+        var indexes = StepEntityScanner.Scan(reader);
+
+        Assert.Equal(1, indexes.EntityCount);
+        Assert.True(indexes.Project.HasValue);
+        Assert.Equal("project-guid", indexes.Project.Value.GlobalId);
+    }
+
+    [Fact]
     public void ScanWithHeader_ReportsFileProgress_WhenScanningFile()
     {
         var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-scan-progress-{Guid.NewGuid():N}.ifc");

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 
 namespace Bingosoft.Net.IfcMetadata.FastStep;
@@ -134,4 +133,3 @@ internal sealed class FastStepMappingCache
         return indexes.StringPool.Intern(value);
     }
 }
-

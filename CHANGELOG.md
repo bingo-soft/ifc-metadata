@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.26.1] - 2026-08-04 12:10
+
+### Summary
+- Fixed fast-step parsing for STEP entity assignments that include whitespace before `=`.
+- Improved fast-step diagnostics for zero-entity scans and missing/invalid `IFCPROJECT` roots.
+- Included internal cleanup/refactoring across fast-step and streaming export paths.
+
+### Fixed
+- Fixed `StepLexer` to accept STEP records such as `#3494289 = IFCPROJECT(...)`, preventing valid files from scanning as zero entities.
+- Added clearer fast-step scan warnings and emitter exceptions when no entities are found, `IFCPROJECT` is missing, or the project `GlobalId` is empty.
+- Added regression coverage for spaced entity assignments and diagnostic failure messages.
+
+### Changed
+- Updated `Xbim.Essentials` from `6.0.587` to `6.1.605`.
+- Tightened internal visibility and simplified loops/branches in fast-step indexing, MMF reading, STEP parsing, and streaming export helpers.
+- Updated project version to `1.26.1` in `src/ifc-metadata.csproj` and README.
+
 ## [1.26.0] - 2026-06-10 20:27
 
 ### Summary

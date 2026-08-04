@@ -143,4 +143,101 @@ public sealed class FastStepJsonEmitterTests
             }
         }
     }
+
+    [Fact]
+    public void FastStepExporter_LogsZeroEntityDiagnostic_AndThrowsSpecificFailure()
+    {
+        var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-fast-step-empty-{Guid.NewGuid():N}.ifc");
+        var jsonPath = Path.Combine(Path.GetTempPath(), $"ifc-fast-step-empty-{Guid.NewGuid():N}.json");
+        var diagnostics = new List<string>();
+
+        const string ifc = """
+        ISO-10303-21;
+        HEADER;
+        FILE_SCHEMA(('IFC4'));
+        ENDSEC;
+        DATA;
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        try
+        {
+            File.WriteAllText(ifcPath, ifc);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                FastStepJsonExporter.Export(
+                    new FileInfo(ifcPath),
+                    new FileInfo(jsonPath),
+                    preserveOrder: true,
+                    64 * 1024,
+                    writeThrough: false,
+                    progressReporter: null,
+                    diagnosticsLogger: diagnostics.Add));
+
+            Assert.Contains("Fast-step scan found 0 STEP entities", exception.Message);
+            Assert.Contains(diagnostics, message => message.Contains("fast-step scan warning: scan found 0 STEP entities", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(ifcPath))
+            {
+                File.Delete(ifcPath);
+            }
+
+            if (File.Exists(jsonPath))
+            {
+                File.Delete(jsonPath);
+            }
+        }
+    }
+
+    [Fact]
+    public void FastStepExporter_LogsMissingProjectDiagnostic_AndThrowsSpecificFailure()
+    {
+        var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-fast-step-no-project-{Guid.NewGuid():N}.ifc");
+        var jsonPath = Path.Combine(Path.GetTempPath(), $"ifc-fast-step-no-project-{Guid.NewGuid():N}.json");
+        var diagnostics = new List<string>();
+
+        const string ifc = """
+        ISO-10303-21;
+        HEADER;
+        FILE_SCHEMA(('IFC4'));
+        ENDSEC;
+        DATA;
+        #11=IFCSITE('site-guid',$,'Site Name',$,$,$,$,$,$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        try
+        {
+            File.WriteAllText(ifcPath, ifc);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                FastStepJsonExporter.Export(
+                    new FileInfo(ifcPath),
+                    new FileInfo(jsonPath),
+                    preserveOrder: true,
+                    64 * 1024,
+                    writeThrough: false,
+                    progressReporter: null,
+                    diagnosticsLogger: diagnostics.Add));
+
+            Assert.Contains("IFC project root (IFCPROJECT) was not found after scanning 1 STEP entities", exception.Message);
+            Assert.Contains(diagnostics, message => message.Contains("fast-step scan warning: IFCPROJECT was not found after scanning 1 STEP entities", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(ifcPath))
+            {
+                File.Delete(ifcPath);
+            }
+
+            if (File.Exists(jsonPath))
+            {
+                File.Delete(jsonPath);
+            }
+        }
+    }
 }

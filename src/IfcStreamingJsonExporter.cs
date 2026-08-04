@@ -38,39 +38,17 @@ internal static class IfcStreamingJsonExporter
         var isFallbackForced = IsFallbackForced();
         diagnosticsLogger?.Invoke($"xbim: schema={schemaVersion}");
 
-        if (!isFallbackForced && IfcSchemaRouter.IsIfc2x3(schemaVersion) && project is Xbim.Ifc2x3.Kernel.IfcProject ifc2x3Project)
+        return isFallbackForced switch
         {
-            return Ifc2x3StreamingJsonExporter.Export(
-                model,
-                ifc2x3Project,
-                jsonTargetFile,
-                preserveOrder,
-                outputFileBufferSize,
-                writeThrough,
-                progressReporter);
-        }
-
-        if (!isFallbackForced && IfcSchemaRouter.IsIfc4(schemaVersion) && project is Xbim.Ifc4.Kernel.IfcProject ifc4Project)
-        {
-            return Ifc4StreamingJsonExporter.Export(
-                model,
-                ifc4Project,
-                jsonTargetFile,
-                preserveOrder,
-                outputFileBufferSize,
-                writeThrough,
-                progressReporter);
-        }
-
-        return IfcStreamingExportUtilities.ExportWithSharedPipeline(
-            model,
-            project,
-            jsonTargetFile,
-            preserveOrder,
-            outputFileBufferSize,
-            writeThrough,
-            progressReporter,
-            WriterOptions);
+            false when IfcSchemaRouter.IsIfc2x3(schemaVersion) && project is Xbim.Ifc2x3.Kernel.IfcProject ifc2x3Project
+                => Ifc2x3StreamingJsonExporter.Export(model, ifc2x3Project, jsonTargetFile, preserveOrder,
+                    outputFileBufferSize, writeThrough, progressReporter),
+            false when IfcSchemaRouter.IsIfc4(schemaVersion) && project is Xbim.Ifc4.Kernel.IfcProject ifc4Project =>
+                Ifc4StreamingJsonExporter.Export(model, ifc4Project, jsonTargetFile, preserveOrder,
+                    outputFileBufferSize, writeThrough, progressReporter),
+            _ => IfcStreamingExportUtilities.ExportWithSharedPipeline(model, project, jsonTargetFile, preserveOrder,
+                outputFileBufferSize, writeThrough, progressReporter, WriterOptions)
+        };
     }
 
 

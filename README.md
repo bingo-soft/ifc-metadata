@@ -1,7 +1,7 @@
 # ifc-metadata
 
 CLI tool for exporting IFC metadata from `.ifc` into JSON.
-Current project version: `1.26.0`.
+Current project version: `1.26.1`.
 
 ## Purpose
 

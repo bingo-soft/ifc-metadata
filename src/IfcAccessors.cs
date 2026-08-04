@@ -168,7 +168,7 @@ internal static class IfcAccessors
         return CreateMaterialId(fallbackTypeName, fallbackLabel.Value);
     }
 
-    internal static bool TryGetEntityLabel(object value, out int? entityLabel)
+    private static bool TryGetEntityLabel(object value, out int? entityLabel)
     {
         if (value is IPersistEntity persistEntity)
         {
@@ -191,7 +191,7 @@ internal static class IfcAccessors
         return false;
     }
 
-    internal static bool TryExtractGlobalId(object value, out string globalId)
+    private static bool TryExtractGlobalId(object value, out string globalId)
     {
         while (true)
         {
@@ -475,7 +475,7 @@ internal static class IfcAccessorDelegateCache
             CreateGetter(t, "EntityLabel")));
     }
 
-            
+
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "Fallback accessors are resolved from runtime IFC entity properties.")]
     private static Func<object, object> CreateGetter(Type type, string propertyName)
     {
