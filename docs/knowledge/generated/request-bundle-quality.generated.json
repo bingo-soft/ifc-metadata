@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "textEncodingQualitySchemaVersion": 1,
+  "kind": "agent-flow-request-bundle-quality",
+  "generatedAt": "2026-08-07T09:00:19.230Z",
+  "status": "complete",
+  "requestBundleEncodingStatus": "complete",
+  "requestBundleRepairStatus": "not_required",
+  "scannedFileCount": 1,
+  "changedFileCount": 0,
+  "changedFiles": [],
+  "remainingFindingCount": 0,
+  "files": [
+    {
+      "path": "openspec/changes/fix-fast-step-compact-header/00-user-request.md",
+      "exists": true,
+      "status": "complete",
+      "changed": false,
+      "encodingStatus": "complete",
+      "findingCountBefore": 0,
+      "findingCountAfter": 0,
+      "repairCount": 0,
+      "findings": []
+    }
+  ]
+}
