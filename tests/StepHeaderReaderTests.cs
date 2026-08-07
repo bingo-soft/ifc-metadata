@@ -75,4 +75,38 @@ public sealed class StepHeaderReaderTests
             }
         }
     }
+
+    [Fact]
+    public void Read_ParsesHeader_WhenHeaderMarkerSharesLineWithStatements()
+    {
+        var ifcPath = Path.Combine(Path.GetTempPath(), $"ifc-header-{Guid.NewGuid():N}.ifc");
+
+        const string ifc = """
+        ISO-10303-21;
+        HEADER;FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+        FILE_NAME('model.ifc','2024-01-01T00:00:00',('author'),('org'),'app','system','auth');
+        FILE_SCHEMA(('IFC4'));
+        ENDSEC;
+        DATA;
+        #10=IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        try
+        {
+            File.WriteAllText(ifcPath, ifc);
+            var header = StepHeaderReader.Read(new FileInfo(ifcPath));
+
+            Assert.Equal("IFC4", header.Schema);
+            Assert.Equal("author", header.Author);
+        }
+        finally
+        {
+            if (File.Exists(ifcPath))
+            {
+                File.Delete(ifcPath);
+            }
+        }
+    }
 }

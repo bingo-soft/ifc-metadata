@@ -22,36 +22,87 @@ internal static class StepHeaderReader
     private static string ReadHeaderSection(TextReader reader)
     {
         var headerBuilder = new StringBuilder(1024);
-        var inHeaderSection = false;
+        if (!ReadUntilMarker(reader, "HEADER;"))
+        {
+            return string.Empty;
+        }
+
+        headerBuilder.Append("HEADER;");
+        ReadThroughMarker(reader, "ENDSEC;", headerBuilder);
+        return headerBuilder.ToString();
+    }
+
+    private static bool ReadUntilMarker(TextReader reader, string marker)
+    {
+        var matched = 0;
+        while (true)
+        {
+            var value = reader.Read();
+            if (value < 0)
+            {
+                return false;
+            }
+
+            matched = AdvanceMarkerMatch((char)value, marker, matched);
+            if (matched == marker.Length)
+            {
+                return true;
+            }
+        }
+    }
+
+    private static void ReadThroughMarker(TextReader reader, string marker, StringBuilder destination)
+    {
+        var matched = 0;
+        var inString = false;
 
         while (true)
         {
-            var line = reader.ReadLine();
-            if (line is null)
+            var value = reader.Read();
+            if (value < 0)
             {
-                break;
+                return;
             }
 
-            var trimmedLine = line.Trim();
-            if (!inHeaderSection)
+            var ch = (char)value;
+            destination.Append(ch);
+
+            if (ch == '\'')
             {
-                if (!trimmedLine.Equals("HEADER;", StringComparison.OrdinalIgnoreCase))
+                if (inString && reader.Peek() == '\'')
                 {
+                    destination.Append((char)reader.Read());
+                    matched = 0;
                     continue;
                 }
 
-                inHeaderSection = true;
+                inString = !inString;
+                matched = 0;
+                continue;
             }
 
-            headerBuilder.AppendLine(line);
-
-            if (trimmedLine.Equals("ENDSEC;", StringComparison.OrdinalIgnoreCase))
+            if (inString)
             {
-                break;
+                matched = 0;
+                continue;
+            }
+
+            matched = AdvanceMarkerMatch(ch, marker, matched);
+            if (matched == marker.Length)
+            {
+                return;
             }
         }
+    }
 
-        return headerBuilder.ToString();
+    private static int AdvanceMarkerMatch(char ch, string marker, int matched)
+    {
+        if (char.ToUpperInvariant(ch) == marker[matched])
+        {
+            return matched + 1;
+        }
+
+        return char.ToUpperInvariant(ch) == marker[0] ? 1 : 0;
     }
 
     private static FastStepHeader ParseHeaderContent(string content)

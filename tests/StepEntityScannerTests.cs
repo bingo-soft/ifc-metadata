@@ -141,6 +141,28 @@ public sealed class StepEntityScannerTests
     }
 
     [Fact]
+    public void ScanWithHeader_ReadsCompactHeaderAndEntities_FromSingleReader()
+    {
+        const string step = """
+        ISO-10303-21;
+        HEADER;FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+        FILE_NAME('model.ifc','2024-01-01T00:00:00',('author'),('org'),'app','system','auth');
+        FILE_SCHEMA(('IFC4'));ENDSEC;DATA;
+        #10=IFCPROJECT('project-guid',$,'Project Name',$,$,$,$,$,$);
+        ENDSEC;
+        END-ISO-10303-21;
+        """;
+
+        using var reader = new StringReader(step);
+        var scanResult = StepEntityScanner.ScanWithHeader(reader);
+
+        Assert.Equal("IFC4", scanResult.Header.Schema);
+        Assert.Equal(1, scanResult.Indexes.EntityCount);
+        Assert.True(scanResult.Indexes.Project.HasValue);
+        Assert.Equal("project-guid", scanResult.Indexes.Project.Value.GlobalId);
+    }
+
+    [Fact]
     public void Scan_AcceptsWhitespaceBetweenEntityIdAndAssignment()
     {
         const string step = """
